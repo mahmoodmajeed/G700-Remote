@@ -1,0 +1,91 @@
+# DisplayMirror Compatibility
+
+This document records the compatibility assumptions used for the v1.2 baseline. It is a source summary, not a replacement for re-checking future DisplayMirror APK releases.
+
+## Head Unit Requirement
+
+Install DisplayMirror on the Jetour G700 head unit and enable Remote Access in DisplayMirror. The phone app enters the generated pairing code during first-time setup.
+
+DisplayMirror project:
+
+[https://github.com/Baghdady92/DisplayMirror](https://github.com/Baghdady92/DisplayMirror)
+
+## Protocol
+
+- Protocol version: `3`
+- Framing: UTF-8 JSON objects separated by newline
+- Handshake command: `hello`
+- Pairing field: `pairingCode`
+
+Example handshake shape:
+
+```json
+{"cmd":"hello","protocolVersion":3,"pairingCode":"123456"}
+```
+
+The app does not send normal control commands until the transport is connected, notifications/streams are ready, and the handshake is accepted.
+
+## BLE
+
+Known DisplayMirror remote-access identifiers:
+
+- Service: `b1c2d3e4-f5a6-7890-abcd-ef1234567890`
+- Command characteristic: `b1c2d3e4-f5a6-7890-abcd-ef1234567891`
+- Response characteristic: `b1c2d3e4-f5a6-7890-abcd-ef1234567892`
+- CCCD: `00002902-0000-1000-8000-00805f9b34fb`
+
+BLE notifications may split responses into chunks, so the app buffers until newline before parsing.
+
+## LAN / mDNS
+
+- Service name: `CarKey`
+- Service type: `_carkey._tcp.`
+- TCP port: `9274`
+
+LAN uses the same newline-framed JSON command/response model as BLE.
+
+## Commands Used By The App
+
+- `status`
+- `lock`
+- `unlock`
+- `window`
+- `sunroof`
+- `sunshade`
+- `hazards`
+- `drl`
+- `soc`
+- `parking_charge`
+- `race_charge`
+- `climate`
+
+Sensitive commands remain behind local auth or explicit confirmation.
+
+## v2.65 Telemetry Included In v1.2
+
+The v1.2 baseline parses and displays these v2.65 additions when returned:
+
+- `fuelPercent`
+- `coolantTemp`
+- `raceChargeActive`
+- `raceChargeTarget`
+- `raceChargeEtaMin`
+
+Missing fields are nullable and do not overwrite previously known values.
+
+## Intentionally Excluded
+
+The inspected DisplayMirror v2.65 remote protocol did not provide a reliable remote surface for:
+
+- rear/ceiling screen control
+- ignition or power mode
+- odometer
+- EV range
+- gear
+- steering angle
+
+Do not expose UI for these fields unless a future DisplayMirror release clearly sends them over the remote protocol.
+
+## Lock State
+
+DisplayMirror lock-state semantics can depend on how the head unit maps `doorLockState`. The app should remain calibration-friendly and avoid hard-coded assumptions beyond what has been validated on the real vehicle.

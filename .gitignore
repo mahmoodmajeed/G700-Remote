@@ -1,0 +1,41 @@
+# Gradle / Android build output
+.gradle/
+.kotlin/
+build/
+**/build/
+captures/
+externalNativeBuild/
+.cxx/
+
+# Local IDE and machine configuration
+.idea/
+*.iml
+local.properties
+
+# Generated packages and signing by-products
+*.apk
+*.ap_
+*.aab
+*.idsig
+*.mapping
+
+# Signing material must stay outside the repository
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+signing.properties
+keystore.properties
+
+# Reverse-engineering inputs/outputs are documentation sources, not app source
+*.dex
+*.smali
+decompiled*/
+apktool*/
+jadx*/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.log

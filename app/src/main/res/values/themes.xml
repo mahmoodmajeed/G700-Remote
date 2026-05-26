@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.G700Remote" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:statusBarColor">@color/g700_background</item>
+        <item name="android:navigationBarColor">@color/g700_background</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
