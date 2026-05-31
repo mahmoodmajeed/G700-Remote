@@ -99,16 +99,20 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.mmy.g700remote.BuildConfig
 import com.mmy.g700remote.ble.ConnectionPreference
 import com.mmy.g700remote.G700RemoteViewModel
 import com.mmy.g700remote.ble.RemoteConnectionState
 import com.mmy.g700remote.ble.TransportKind
 import com.mmy.g700remote.data.AppLanguage
 import com.mmy.g700remote.data.AppTheme
+import com.mmy.g700remote.data.AppUpdateInfo
+import com.mmy.g700remote.data.AppUpdateState
 import com.mmy.g700remote.data.LockStateMapping
 import com.mmy.g700remote.data.RemoteUiState
 import com.mmy.g700remote.data.VehicleTelemetry
 import com.mmy.g700remote.protocol.ClimateAction
+import com.mmy.g700remote.protocol.MirrorAction
 import com.mmy.g700remote.protocol.OnOffAction
 import com.mmy.g700remote.protocol.OpenCloseAction
 import com.mmy.g700remote.protocol.ParkingChargeAction
@@ -118,6 +122,9 @@ import com.mmy.g700remote.protocol.SeatPosition
 import com.mmy.g700remote.protocol.WindowAction
 import com.mmy.g700remote.security.LocalAuthGate
 import com.mmy.g700remote.ui.theme.G700RemoteTheme
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.launch
 
 private val LocalAppLanguage = staticCompositionLocalOf { AppLanguage.English }
@@ -133,11 +140,16 @@ private fun translate(language: AppLanguage, text: String): String =
 fun G700RemoteApp(
     activity: Activity,
     permissionsGranted: Boolean,
+    sharedNavigationText: String?,
+    showUpdates: Boolean,
+    onSharedNavigationConsumed: () -> Unit,
+    onUpdatesShown: () -> Unit,
     onRequestPermissions: () -> Unit,
     onShareLog: (String) -> Unit,
     viewModel: G700RemoteViewModel = viewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val updateState by viewModel.updateState.collectAsStateWithLifecycle()
     val language = state.appLanguage
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -188,6 +200,25 @@ fun G700RemoteApp(
 
     LaunchedEffect(state.lastError) {
         state.lastError?.let { snackbarHostState.showSnackbar(it) }
+    }
+
+    LaunchedEffect(state.lastNavigationStatus) {
+        state.lastNavigationStatus?.let { snackbarHostState.showSnackbar(it) }
+    }
+
+    LaunchedEffect(updateState.message) {
+        updateState.message?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearUpdateMessage()
+        }
+    }
+
+    LaunchedEffect(sharedNavigationText) {
+        val text = sharedNavigationText
+        if (!text.isNullOrBlank()) {
+            viewModel.sendSharedNavigation(text)
+            onSharedNavigationConsumed()
+        }
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -244,8 +275,13 @@ fun G700RemoteApp(
                 onLocalAuthChanged = viewModel::setLocalAuthEnabled,
                 onLockMappingChanged = viewModel::setLockStateMapping,
                 onLoggingChanged = viewModel::setLoggingEnabled,
+                updateState = updateState,
+                onCheckForUpdates = viewModel::checkForUpdates,
+                onDownloadUpdate = { viewModel.downloadAndInstallUpdate(activity, it) },
                 onRefresh = viewModel::refreshNow,
                 onShareLog = { onShareLog(viewModel.exportLogText()) },
+                showUpdates = showUpdates,
+                onUpdatesShown = onUpdatesShown,
                 contentPadding = padding,
             )
         }
@@ -480,11 +516,22 @@ private fun MainRemoteScaffold(
     onLocalAuthChanged: (Boolean) -> Unit,
     onLockMappingChanged: (LockStateMapping) -> Unit,
     onLoggingChanged: (Boolean) -> Unit,
+    updateState: AppUpdateState,
+    onCheckForUpdates: () -> Unit,
+    onDownloadUpdate: (AppUpdateInfo) -> Unit,
     onRefresh: () -> Unit,
     onShareLog: () -> Unit,
+    showUpdates: Boolean,
+    onUpdatesShown: () -> Unit,
     contentPadding: PaddingValues,
 ) {
     var tab by rememberSaveable { mutableStateOf(AppTab.Home) }
+    LaunchedEffect(showUpdates) {
+        if (showUpdates) {
+            tab = AppTab.Settings
+            onUpdatesShown()
+        }
+    }
     Scaffold(
         modifier = Modifier.padding(contentPadding),
         topBar = {
@@ -533,6 +580,9 @@ private fun MainRemoteScaffold(
                 onLocalAuthChanged = onLocalAuthChanged,
                 onLockMappingChanged = onLockMappingChanged,
                 onLoggingChanged = onLoggingChanged,
+                updateState = updateState,
+                onCheckForUpdates = onCheckForUpdates,
+                onDownloadUpdate = onDownloadUpdate,
                 onShareLog = onShareLog,
                 modifier = modifier,
             )
@@ -854,6 +904,19 @@ private fun OpeningsScreen(
                 enabled = ready,
             )
         }
+        Section(tr("Mirrors")) {
+            ActionBoxGrid(
+                actions = listOf(
+                    ActionSpec(tr("Fold"), Icons.Outlined.DirectionsCar) {
+                        onCommand(RemoteCommand.Mirror(MirrorAction.Fold))
+                    },
+                    ActionSpec(tr("Unfold"), Icons.Outlined.DirectionsCar) {
+                        onCommand(RemoteCommand.Mirror(MirrorAction.Unfold))
+                    },
+                ),
+                enabled = ready,
+            )
+        }
     }
 }
 
@@ -1016,6 +1079,9 @@ private fun SettingsScreen(
     onLocalAuthChanged: (Boolean) -> Unit,
     onLockMappingChanged: (LockStateMapping) -> Unit,
     onLoggingChanged: (Boolean) -> Unit,
+    updateState: AppUpdateState,
+    onCheckForUpdates: () -> Unit,
+    onDownloadUpdate: (AppUpdateInfo) -> Unit,
     onShareLog: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1153,6 +1219,45 @@ private fun SettingsScreen(
             }
         }
         item {
+            Section(tr("App updates")) {
+                MetricRow(tr("Current version"), BuildConfig.VERSION_NAME)
+                updateState.lastCheckedMillis?.let {
+                    MetricRow(tr("Last checked"), formatTimeAgo(it))
+                }
+                updateState.availableUpdate?.let { info ->
+                    MetricRow(tr("Available version"), info.versionName)
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = { onDownloadUpdate(info) },
+                        enabled = !updateState.isDownloading,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            if (updateState.isDownloading) {
+                                updateState.downloadProgress?.let { "${tr("Downloading")} $it%" } ?: tr("Downloading")
+                            } else {
+                                tr("Download and install")
+                            },
+                        )
+                    }
+                } ?: Text(
+                    tr("Checks GitHub releases for signed APK updates twice daily."),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = onCheckForUpdates,
+                    enabled = !updateState.isChecking && !updateState.isDownloading,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (updateState.isChecking) tr("Checking") else tr("Check for updates"))
+                }
+            }
+        }
+        item {
             Section(tr("Advanced")) {
                 OutlinedButton(
                     onClick = { advancedExpanded = !advancedExpanded },
@@ -1192,6 +1297,18 @@ private fun SettingsScreen(
                         ) {
                             Text(tr("Ping"))
                         }
+                    }
+                    state.carLocation?.let { location ->
+                        Spacer(Modifier.height(8.dp))
+                        MetricRow(tr("Car location"), "%.6f, %.6f".format(location.lat, location.lon))
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = { onCommand(RemoteCommand.GetLocation) },
+                        enabled = state.connectionState is RemoteConnectionState.Ready,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(tr("Get car location"))
                     }
                     Spacer(Modifier.height(10.dp))
                     OutlinedButton(
@@ -2142,6 +2259,9 @@ private fun isLocked(state: RemoteUiState): Boolean? =
 
 private fun formatTemp(value: Double): String = "%.1f °C".format(value)
 
+private fun formatTimeAgo(value: Long): String =
+    SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(value))
+
 private fun formatChargeMode(value: String?): String? =
     value?.uppercase()?.replace('_', ' ')
 
@@ -2243,6 +2363,9 @@ private val ArabicTranslations = mapOf(
     "Close" to "إغلاق",
     "Sunshade" to "ستارة السقف",
     "Sunroof" to "فتحة السقف",
+    "Mirrors" to "المرايا",
+    "Fold" to "طي",
+    "Unfold" to "فتح الطي",
     "Target SOC" to "نسبة الشحن المستهدفة",
     "Parking Charge" to "شحن التوقف",
     "Quiet" to "هادئ",
@@ -2302,7 +2425,18 @@ private val ArabicTranslations = mapOf(
     "Log entries" to "سجلات",
     "Status" to "الحالة",
     "Ping" to "اختبار الاتصال",
+    "Car location" to "موقع السيارة",
+    "Get car location" to "جلب موقع السيارة",
     "Export redacted protocol log" to "تصدير سجل البروتوكول بعد حجب البيانات",
+    "App updates" to "تحديثات التطبيق",
+    "Current version" to "الإصدار الحالي",
+    "Last checked" to "آخر فحص",
+    "Available version" to "الإصدار المتاح",
+    "Download and install" to "تنزيل وتثبيت",
+    "Downloading" to "جار التنزيل",
+    "Check for updates" to "التحقق من التحديثات",
+    "Checking" to "جار التحقق",
+    "Checks GitHub releases for signed APK updates twice daily." to "يفحص إصدارات GitHub مرتين يومياً لتحديثات APK الموقعة.",
     "Developed by Mahmood Majeed with ❤️ in Bahrain 🇧🇭" to "تم التطوير بواسطة Mahmood Majeed ❤️ في البحرين 🇧🇭",
     "Disconnected" to "غير متصل",
     "Scanning" to "جار البحث",

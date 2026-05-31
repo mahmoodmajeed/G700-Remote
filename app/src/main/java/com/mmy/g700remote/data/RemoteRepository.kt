@@ -5,12 +5,14 @@ import com.mmy.g700remote.ble.RemoteConnectionState
 import com.mmy.g700remote.ble.ScannedDevice
 import com.mmy.g700remote.ble.ConnectionPreference
 import com.mmy.g700remote.protocol.RemoteCommand
+import com.mmy.g700remote.protocol.NavigationShareParser
 import com.mmy.g700remote.protocol.RemoteProtocolCodec
 import com.mmy.g700remote.protocol.RemoteResponse
 import com.mmy.g700remote.protocol.ClimateAction
 import com.mmy.g700remote.protocol.OnOffAction
 import com.mmy.g700remote.protocol.ParkingChargeAction
 import com.mmy.g700remote.protocol.RaceChargeAction
+import kotlinx.coroutines.flow.first
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -221,44 +223,71 @@ class RemoteRepository(
 
     fun refreshNow() {
         scope.launch {
-            sendForRefresh(RemoteCommand.Status)
-            sendForRefresh(RemoteCommand.Climate(ClimateAction.Status))
-            sendForRefresh(RemoteCommand.ParkingCharge(ParkingChargeAction.Status))
-            sendForRefresh(RemoteCommand.RaceCharge(RaceChargeAction.Status))
+            refreshAll()
+        }
+    }
+
+    fun sendSharedNavigation(text: String) {
+        val command = NavigationShareParser.parse(text)
+        if (command == null) {
+            _uiState.update { it.copy(lastError = "No destination found in shared text") }
+            return
+        }
+        scope.launch {
+            if (_uiState.value.connectionState !is RemoteConnectionState.Ready) {
+                connectSaved()
+                runCatching {
+                    kotlinx.coroutines.withTimeout(8_000) {
+                        transport.connectionState.first { it is RemoteConnectionState.Ready }
+                    }
+                }
+            }
+            sendImmediate(command)
         }
     }
 
     fun send(command: RemoteCommand) {
         scope.launch {
-            runCatching {
-                appendLog(ProtocolLogEntry.Direction.Tx, RemoteProtocolCodec.encodeCommand(command))
-                val response = transport.send(command)
-                applyResponse(response)
-                if (response !is RemoteResponse.Error) {
-                    applyCommandEcho(command)
-                    if (command is RemoteCommand.Climate && command.action != ClimateAction.Status) {
-                        delay(600)
-                        sendForRefresh(RemoteCommand.Climate(ClimateAction.Status))
-                    }
-                }
-            }.onFailure { throwable ->
-                val message = throwable.message ?: "Command failed"
-                appendLog(ProtocolLogEntry.Direction.Info, "Command failed: $message")
-                _uiState.update { it.copy(lastError = message) }
-            }
+            sendImmediate(command)
         }
     }
 
     private fun startForegroundRefresh() {
         if (refreshJob?.isActive == true) return
         refreshJob = scope.launch {
-            delay(2_500)
+            delay(500)
             while (true) {
                 if (_uiState.value.connectionState is RemoteConnectionState.Ready) {
-                    refreshNow()
+                    refreshAll()
                 }
-                delay(45_000)
+                delay(3_000)
             }
+        }
+    }
+
+    private suspend fun refreshAll() {
+        sendForRefresh(RemoteCommand.Status)
+        sendForRefresh(RemoteCommand.Climate(ClimateAction.Status))
+        sendForRefresh(RemoteCommand.ParkingCharge(ParkingChargeAction.Status))
+        sendForRefresh(RemoteCommand.RaceCharge(RaceChargeAction.Status))
+    }
+
+    private suspend fun sendImmediate(command: RemoteCommand) {
+        runCatching {
+            appendLog(ProtocolLogEntry.Direction.Tx, RemoteProtocolCodec.encodeCommand(command))
+            val response = transport.send(command)
+            applyResponse(response)
+            if (response !is RemoteResponse.Error) {
+                applyCommandEcho(command)
+                if (command is RemoteCommand.Climate && command.action != ClimateAction.Status) {
+                    delay(600)
+                    sendForRefresh(RemoteCommand.Climate(ClimateAction.Status))
+                }
+            }
+        }.onFailure { throwable ->
+            val message = throwable.message ?: "Command failed"
+            appendLog(ProtocolLogEntry.Direction.Info, "Command failed: $message")
+            _uiState.update { it.copy(lastError = message) }
         }
     }
 
@@ -342,6 +371,23 @@ class RemoteRepository(
                         parkingChargeSwitchState = response.switchState ?: it.telemetry.parkingChargeSwitchState,
                         parkingChargeMode = response.mode ?: it.telemetry.parkingChargeMode,
                     ),
+                )
+            }
+
+            is RemoteResponse.Location -> _uiState.update {
+                if (response.lat != null && response.lon != null) {
+                    it.copy(carLocation = CarLocation(response.lat, response.lon))
+                } else {
+                    it
+                }
+            }
+
+            is RemoteResponse.NavigateResult -> _uiState.update {
+                it.copy(
+                    lastNavigationStatus = response.app?.let { app -> "Navigation sent to $app" }
+                        ?: response.status
+                        ?: "Navigation sent",
+                    lastError = null,
                 )
             }
 

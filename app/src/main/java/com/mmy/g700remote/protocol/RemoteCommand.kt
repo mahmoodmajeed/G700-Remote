@@ -55,6 +55,35 @@ sealed class RemoteCommand {
         override val cmd: String = "drl"
     }
 
+    data class Mirror(val action: MirrorAction) : RemoteCommand() {
+        override val cmd: String = "mirror"
+    }
+
+    object GetLocation : RemoteCommand() {
+        override val cmd: String = "get_location"
+        override val expectedResponseTypes: Set<String> = setOf("location", "error")
+    }
+
+    data class Navigate(
+        val lat: Double? = null,
+        val lon: Double? = null,
+        val label: String? = null,
+        val query: String? = null,
+    ) : RemoteCommand() {
+        init {
+            val hasCoords = lat != null && lon != null
+            val hasQuery = !query.isNullOrBlank()
+            require(hasCoords || hasQuery) { "Navigation requires coordinates or query" }
+            if (hasCoords) {
+                require(lat in -90.0..90.0) { "Latitude must be -90..90" }
+                require(lon in -180.0..180.0) { "Longitude must be -180..180" }
+            }
+        }
+
+        override val cmd: String = "navigate"
+        override val expectedResponseTypes: Set<String> = setOf("navigate", "error")
+    }
+
     data class Soc(val value: Int) : RemoteCommand() {
         init {
             require(value in 25..70) { "SOC target must be 25..70" }
@@ -114,6 +143,14 @@ sealed class RemoteCommand {
             is Sunshade -> json.put("action", action.wireValue)
             is Hazards -> json.put("action", action.wireValue)
             is Drl -> json.put("action", action.wireValue)
+            is Mirror -> json.put("action", action.wireValue)
+            GetLocation -> Unit
+            is Navigate -> {
+                lat?.let { json.put("lat", it) }
+                lon?.let { json.put("lon", it) }
+                label?.trim()?.takeIf { it.isNotEmpty() }?.let { json.put("label", it) }
+                query?.trim()?.takeIf { it.isNotEmpty() }?.let { json.put("query", it) }
+            }
             is Soc -> json.put("value", value)
             is ParkingCharge -> json.put("action", action.wireValue)
             is RaceCharge -> {
@@ -143,6 +180,9 @@ sealed class RemoteCommand {
         is Sunshade -> "Sunshade ${action.label}"
         is Hazards -> "Hazards ${action.label}"
         is Drl -> "DRL ${action.label}"
+        is Mirror -> "Mirrors ${action.label}"
+        GetLocation -> "Get car location"
+        is Navigate -> "Send destination"
         is Soc -> "Set SOC $value%"
         is ParkingCharge -> "Parking charge ${action.label}"
         is RaceCharge -> "Race charge ${action.label}"
@@ -166,6 +206,11 @@ enum class OpenCloseAction(val wireValue: String, val label: String) {
 enum class OnOffAction(val wireValue: String, val label: String) {
     On("on", "on"),
     Off("off", "off"),
+}
+
+enum class MirrorAction(val wireValue: String, val label: String) {
+    Fold("fold", "fold"),
+    Unfold("unfold", "unfold"),
 }
 
 enum class ParkingChargeAction(val wireValue: String, val label: String) {

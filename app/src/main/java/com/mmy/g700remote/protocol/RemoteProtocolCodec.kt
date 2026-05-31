@@ -3,7 +3,7 @@ package com.mmy.g700remote.protocol
 import java.nio.charset.StandardCharsets
 
 object RemoteProtocolCodec {
-    const val PROTOCOL_VERSION = 3
+    const val PROTOCOL_VERSION = 4
 
     fun encodeCommand(command: RemoteCommand): String = command.toJson().toString()
 

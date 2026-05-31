@@ -11,7 +11,7 @@ class RemoteProtocolCodecTest {
     fun serializesCommandsWithExpectedFields() {
         val hello = JSONObject(RemoteProtocolCodec.encodeCommand(RemoteCommand.Hello("123456")))
         assertEquals("hello", hello.getString("cmd"))
-        assertEquals(3, hello.getInt("protocolVersion"))
+        assertEquals(4, hello.getInt("protocolVersion"))
         assertEquals("123456", hello.getString("pairingCode"))
 
         val seat = JSONObject(
@@ -36,6 +36,15 @@ class RemoteProtocolCodecTest {
         assertEquals("race_charge", race.getString("cmd"))
         assertEquals("start", race.getString("action"))
         assertEquals(85, race.getInt("target"))
+
+        val navigate = JSONObject(RemoteProtocolCodec.encodeCommand(RemoteCommand.Navigate(lat = 26.2285, lon = 50.5860, label = "Bahrain")))
+        assertEquals("navigate", navigate.getString("cmd"))
+        assertEquals(26.2285, navigate.getDouble("lat"), 0.0)
+        assertEquals(50.5860, navigate.getDouble("lon"), 0.0)
+
+        val mirror = JSONObject(RemoteProtocolCodec.encodeCommand(RemoteCommand.Mirror(MirrorAction.Fold)))
+        assertEquals("mirror", mirror.getString("cmd"))
+        assertEquals("fold", mirror.getString("action"))
     }
 
     @Test
@@ -67,6 +76,25 @@ class RemoteProtocolCodecTest {
         )
         assertTrue(parking is RemoteResponse.ParkingChargeState)
         assertEquals(2, (parking as RemoteResponse.ParkingChargeState).mode)
+
+        val location = RemoteProtocolCodec.decodeResponse("""{"type":"location","lat":26.2285,"lon":50.586}""")
+        assertTrue(location is RemoteResponse.Location)
+        location as RemoteResponse.Location
+        assertEquals(26.2285, location.lat ?: 0.0, 0.0)
+
+        val navigate = RemoteProtocolCodec.decodeResponse("""{"type":"navigate","status":"ok","app":"com.google.android.apps.maps"}""")
+        assertTrue(navigate is RemoteResponse.NavigateResult)
+        assertEquals("com.google.android.apps.maps", (navigate as RemoteResponse.NavigateResult).app)
+    }
+
+    @Test
+    fun parsesSharedMapDestinations() {
+        val coords = NavigationShareParser.parse("https://www.google.com/maps/search/?api=1&query=26.2285,50.5860")
+        assertEquals(26.2285, coords?.lat ?: 0.0, 0.0)
+        assertEquals(50.5860, coords?.lon ?: 0.0, 0.0)
+
+        val query = NavigationShareParser.parse("Bahrain International Circuit")
+        assertEquals("Bahrain International Circuit", query?.query)
     }
 
     @Test

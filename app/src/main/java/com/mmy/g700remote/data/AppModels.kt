@@ -54,6 +54,28 @@ data class VehicleTelemetry(
     val seatVentLevels: Map<String, Int> = emptyMap(),
 )
 
+data class CarLocation(
+    val lat: Double,
+    val lon: Double,
+)
+
+data class AppUpdateInfo(
+    val versionName: String,
+    val tagName: String,
+    val apkUrl: String,
+    val releaseUrl: String,
+    val body: String?,
+)
+
+data class AppUpdateState(
+    val isChecking: Boolean = false,
+    val isDownloading: Boolean = false,
+    val downloadProgress: Int? = null,
+    val availableUpdate: AppUpdateInfo? = null,
+    val lastCheckedMillis: Long? = null,
+    val message: String? = null,
+)
+
 data class ProtocolLogEntry(
     val timeMillis: Long,
     val direction: Direction,
@@ -94,5 +116,7 @@ data class RemoteUiState(
     val lockStateMapping: LockStateMapping = LockStateMapping.State1Locked,
     val loggingEnabled: Boolean = false,
     val protocolLog: List<ProtocolLogEntry> = emptyList(),
+    val carLocation: CarLocation? = null,
+    val lastNavigationStatus: String? = null,
     val lastError: String? = null,
 )

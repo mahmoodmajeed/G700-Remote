@@ -1,6 +1,6 @@
 # DisplayMirror Compatibility
 
-This document records the compatibility assumptions used for the v1.2 baseline. It is a source summary, not a replacement for re-checking future DisplayMirror APK releases.
+This document records the compatibility assumptions used for the v1.3 release. It is a source summary, not a replacement for re-checking future DisplayMirror APK releases.
 
 ## Head Unit Requirement
 
@@ -10,9 +10,13 @@ DisplayMirror project:
 
 [https://github.com/Baghdady92/DisplayMirror](https://github.com/Baghdady92/DisplayMirror)
 
+Developer-provided source reviewed for v1.3:
+
+[https://github.com/Baghdady92/DisplayMirror-Using-Internal-method](https://github.com/Baghdady92/DisplayMirror-Using-Internal-method)
+
 ## Protocol
 
-- Protocol version: `3`
+- Protocol version: `4`
 - Framing: UTF-8 JSON objects separated by newline
 - Handshake command: `hello`
 - Pairing field: `pairingCode`
@@ -20,7 +24,7 @@ DisplayMirror project:
 Example handshake shape:
 
 ```json
-{"cmd":"hello","protocolVersion":3,"pairingCode":"123456"}
+{"cmd":"hello","protocolVersion":4,"pairingCode":"123456"}
 ```
 
 The app does not send normal control commands until the transport is connected, notifications/streams are ready, and the handshake is accepted.
@@ -58,12 +62,15 @@ LAN uses the same newline-framed JSON command/response model as BLE.
 - `parking_charge`
 - `race_charge`
 - `climate`
+- `mirror`
+- `get_location`
+- `navigate`
 
 Sensitive commands remain behind local auth or explicit confirmation.
 
-## v2.65 Telemetry Included In v1.2
+## Telemetry Included
 
-The v1.2 baseline parses and displays these v2.65 additions when returned:
+The app parses and displays these fields when returned:
 
 - `fuelPercent`
 - `coolantTemp`
@@ -73,9 +80,18 @@ The v1.2 baseline parses and displays these v2.65 additions when returned:
 
 Missing fields are nullable and do not overwrite previously known values.
 
+DisplayMirror has internal vehicle fields beyond this list, but v1.3 only exposes values that the remote protocol sends to clients.
+
+## v1.3 Additions
+
+- `navigate`: accepts coordinates, Google Maps links, `geo:` links, Google navigation links, or place queries shared from Android.
+- `get_location`: reads the current car location when DisplayMirror returns latitude and longitude.
+- `mirror`: sends `fold` and `unfold` actions.
+- Foreground refresh sends `status`, `climate status`, `parking_charge status`, and `race_charge status` every 3 seconds while connected.
+
 ## Intentionally Excluded
 
-The inspected DisplayMirror v2.65 remote protocol did not provide a reliable remote surface for:
+The inspected DisplayMirror source did not provide a reliable remote surface for:
 
 - rear/ceiling screen control
 - ignition or power mode
@@ -83,6 +99,8 @@ The inspected DisplayMirror v2.65 remote protocol did not provide a reliable rem
 - EV range
 - gear
 - steering angle
+- live hazards, DRL, or mirror status in the general status payload
+- park keep-alive / head-unit awake controls
 
 Do not expose UI for these fields unless a future DisplayMirror release clearly sends them over the remote protocol.
 

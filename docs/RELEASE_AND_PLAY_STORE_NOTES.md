@@ -1,6 +1,6 @@
 # Release And Play Store Notes
 
-These notes prepare the v1.2 baseline for future automated builds and Play Store work.
+These notes prepare the v1.3 baseline for future automated builds and Play Store work.
 
 ## Local Verification
 
@@ -16,8 +16,8 @@ Generated artifacts are under `app/build/outputs/` and should not be committed.
 
 Current baseline:
 
-- `versionName = "1.2"`
-- `versionCode = 3`
+- `versionName = "1.3"`
+- `versionCode = 4`
 
 For future releases, increase `versionCode` for every Play Store upload. Keep `versionName` user-readable and match release notes.
 
@@ -64,3 +64,14 @@ A good first CI workflow can run:
 ```
 
 For Play Store automation, prefer building Android App Bundles (`bundleRelease`) and use secure upload credentials through GitHub Actions secrets.
+
+## GitHub Release Updater
+
+The app checks `mahmoodmajeed/G700-Remote` GitHub Releases for the latest APK asset. For every public release that should be offered in-app:
+
+- create a GitHub release with a semantic tag such as `v1.3`
+- attach one signed `.apk` asset
+- keep the APK `versionName` higher than installed builds
+- keep the APK signed with the same signing lineage so Android can install it as an update
+
+Normal Android apps cannot silently install updates. The app downloads the APK and opens the Android package installer after the user grants install-from-this-source permission.

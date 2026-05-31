@@ -2,17 +2,17 @@
 
 G700 Remote is a Kotlin Android companion app for Jetour G700 head units running the open-source DisplayMirror app. It connects to DisplayMirror's remote-access protocol over Bluetooth LE or LAN/mDNS and provides a focused phone remote for lock/unlock, climate, openings, lighting, charging, and vehicle telemetry that DisplayMirror exposes.
 
-This repository starts from the v1.2 baseline. It is intended as the clean source baseline for future development, CI, Play Store preparation, and Codex-assisted changes.
+This repository started from the v1.2 baseline and now tracks the functional v1.3 release. It is intended as the clean source baseline for future development, CI, Play Store preparation, and Codex-assisted changes.
 
 ## Status
 
-- App version: `1.2`
+- App version: `1.3`
 - Android package: `com.mmy.g700remote`
-- `versionCode`: `3`
+- `versionCode`: `4`
 - Minimum Android: API 30
 - Target/compile SDK: API 36
 - UI: Jetpack Compose Material 3
-- Protocol: DisplayMirror remote protocol v3
+- Protocol: DisplayMirror remote protocol v4
 - Transports: BLE and LAN/mDNS
 - Languages: English and Arabic
 
@@ -24,12 +24,19 @@ The head unit should have DisplayMirror installed and configured with Remote Acc
 
 [https://github.com/Baghdady92/DisplayMirror](https://github.com/Baghdady92/DisplayMirror)
 
-The v1.2 app is aligned with the DisplayMirror v2.65 remote surface that was locally inspected for this project:
+The v1.3 app was updated against the developer-provided DisplayMirror source repository:
 
-- protocol v3 pairing through the `hello` command
+- [https://github.com/Baghdady92/DisplayMirror-Using-Internal-method](https://github.com/Baghdady92/DisplayMirror-Using-Internal-method)
+
+The inspected source was at DisplayMirror `2.74.0` / protocol v4 and confirmed:
+
+- protocol v4 pairing through the `hello` command
 - BLE service/characteristics used by DisplayMirror remote access
 - LAN discovery through `_carkey._tcp.` and TCP port `9274`
-- telemetry additions for `fuelPercent`, `coolantTemp`, and `race_charge`
+- telemetry for `fuelPercent`, `coolantTemp`, and `race_charge`
+- navigation sharing through the `navigate` command
+- car-location readback through `get_location`
+- mirror fold/unfold through the `mirror` command
 - no reliable remote ignition/power-mode status
 - no remote rear/ceiling screen command
 
@@ -47,15 +54,20 @@ For implementation details, see [docs/DISPLAYMIRROR_COMPATIBILITY.md](docs/DISPL
 - Window, sunroof, and sunshade controls.
 - Charging controls including target SOC, parking charge, race charge start/stop/status, and returned charging telemetry.
 - Lighting controls for hazards and Daytime Running Lights.
+- Side mirror fold/unfold controls when DisplayMirror accepts the command.
+- Share-to-car navigation: share Google Maps, `geo:` links, Google navigation links, coordinates, or place text to G700 Remote and the app forwards it to DisplayMirror.
 - Settings for language, theme, pairing, connectivity, security gate, regional features, and diagnostics.
+- Settings app update checker using GitHub Releases, with manual check and twice-daily background checks.
 - Local biometric/PIN gate for sensitive actions when enabled.
 - Redacted protocol log export for troubleshooting.
 
 ## Known Limits
 
 - The app does not infer ignition or power state from AC, connection loss, or other indirect signals.
-- The "car left running after walking away" background notification is intentionally not implemented because DisplayMirror v2.65 does not expose a reliable remote ignition/power mode.
+- The "car left running after walking away" background notification is intentionally not implemented because the inspected DisplayMirror remote protocol does not expose a reliable remote ignition/power mode.
 - Rear/ceiling screen controls are intentionally absent because the inspected DisplayMirror remote protocol does not expose those commands.
+- Hazards, DRL, and mirror commands can be sent, but DisplayMirror does not currently return confirmed live status for those fields in the general remote status payload.
+- Android does not allow silent APK installation for normal apps. The updater downloads the signed APK and opens the Android package installer after the user grants install-from-this-source permission.
 - Values are displayed only when returned by DisplayMirror. Missing fields remain unknown instead of being faked.
 - Lock-state semantics may need real vehicle calibration if DisplayMirror or the head unit changes the returned mapping.
 
@@ -68,6 +80,7 @@ app/src/main/java/com/mmy/g700remote/
   network/      LAN TCP client and Android NSD/mDNS discovery
   protocol/     command models, response models, JSON codec, frame assembler
   security/     biometric/PIN gate
+  update/       GitHub release checking, update notifications, APK installer handoff
   ui/           Compose app screens and theme system
 ```
 

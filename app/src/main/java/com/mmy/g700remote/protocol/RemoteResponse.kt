@@ -67,6 +67,22 @@ sealed class RemoteResponse {
         override val type: String = "parkingChargeState"
     }
 
+    data class Location(
+        val lat: Double?,
+        val lon: Double?,
+        override val raw: String,
+    ) : RemoteResponse() {
+        override val type: String = "location"
+    }
+
+    data class NavigateResult(
+        val status: String?,
+        val app: String?,
+        override val raw: String,
+    ) : RemoteResponse() {
+        override val type: String = "navigate"
+    }
+
     data class Error(
         val error: String?,
         val message: String?,
@@ -134,6 +150,18 @@ sealed class RemoteResponse {
                     target = json.optIntOrNull("target"),
                     switchState = json.optIntOrNull("switchState"),
                     mode = json.optIntOrNull("mode"),
+                    raw = raw,
+                )
+
+                "location" -> Location(
+                    lat = json.optDoubleOrNull("lat"),
+                    lon = json.optDoubleOrNull("lon"),
+                    raw = raw,
+                )
+
+                "navigate" -> NavigateResult(
+                    status = json.optStringOrNull("status"),
+                    app = json.optStringOrNull("app"),
                     raw = raw,
                 )
 

@@ -1,6 +1,7 @@
 package com.mmy.g700remote
 
 import android.app.Application
+import android.app.Activity
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.mmy.g700remote.ble.ConnectionPreference
@@ -12,13 +13,17 @@ import com.mmy.g700remote.data.CompositeDisplayMirrorTransport
 import com.mmy.g700remote.data.RemoteRepository
 import com.mmy.g700remote.data.RemoteUiState
 import com.mmy.g700remote.data.SecureSettingsStore
+import com.mmy.g700remote.data.AppUpdateInfo
+import com.mmy.g700remote.data.AppUpdateState
 import com.mmy.g700remote.network.DisplayMirrorLanClient
 import com.mmy.g700remote.protocol.RemoteCommand
+import com.mmy.g700remote.update.AppUpdateManager
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 class G700RemoteViewModel(application: Application) : AndroidViewModel(application) {
     private val settings = SecureSettingsStore(application.applicationContext)
+    private val updateManager = AppUpdateManager(application.applicationContext)
     private val repository = RemoteRepository(
         transport = CompositeDisplayMirrorTransport(
             ble = DisplayMirrorBleClient(
@@ -39,6 +44,7 @@ class G700RemoteViewModel(application: Application) : AndroidViewModel(applicati
     )
 
     val uiState: StateFlow<RemoteUiState> = repository.uiState
+    val updateState: StateFlow<AppUpdateState> = updateManager.state
 
     init {
         if (uiState.value.pairedDevice != null) {
@@ -64,6 +70,12 @@ class G700RemoteViewModel(application: Application) : AndroidViewModel(applicati
     fun setLockStateMapping(mapping: LockStateMapping) = repository.setLockStateMapping(mapping)
     fun setLoggingEnabled(enabled: Boolean) = repository.setLoggingEnabled(enabled)
     fun refreshNow() = repository.refreshNow()
+    fun sendSharedNavigation(text: String) = repository.sendSharedNavigation(text)
+    fun checkForUpdates() = viewModelScope.launch { updateManager.checkNow() }
+    fun clearUpdateMessage() = updateManager.clearMessage()
+    fun downloadAndInstallUpdate(activity: Activity, info: AppUpdateInfo) = viewModelScope.launch {
+        updateManager.downloadAndInstall(activity, info)
+    }
     fun onForeground() = repository.onForeground()
     fun onBackground() = repository.onBackground()
     fun exportLogText(): String = repository.exportLogText()

@@ -62,7 +62,7 @@ class FakeDisplayMirrorTransport : DisplayMirrorTransport {
     override suspend fun send(command: RemoteCommand, timeoutMs: Long): RemoteResponse {
         delay(80)
         val response = when (command) {
-            is RemoteCommand.Hello -> RemoteResponse.HelloResult(true, 3, """{"type":"helloResult","success":true,"protocolVersion":3}""")
+            is RemoteCommand.Hello -> RemoteResponse.HelloResult(true, 4, """{"type":"helloResult","success":true,"protocolVersion":4}""")
             RemoteCommand.Status, RemoteCommand.Ping -> status()
             RemoteCommand.Lock -> {
                 lockState = 1
@@ -110,10 +110,21 @@ class FakeDisplayMirrorTransport : DisplayMirrorTransport {
             }
             is RemoteCommand.Hazards,
             is RemoteCommand.Drl,
+            is RemoteCommand.Mirror,
             is RemoteCommand.Sunroof,
             is RemoteCommand.Sunshade,
             is RemoteCommand.Window,
             -> status()
+            RemoteCommand.GetLocation -> RemoteResponse.Location(
+                lat = 26.2285,
+                lon = 50.5860,
+                raw = """{"type":"location","lat":26.2285,"lon":50.5860}""",
+            )
+            is RemoteCommand.Navigate -> RemoteResponse.NavigateResult(
+                status = "ok",
+                app = "geo",
+                raw = """{"type":"navigate","status":"ok","app":"geo"}""",
+            )
         }
         _incoming.emit(response)
         return response
