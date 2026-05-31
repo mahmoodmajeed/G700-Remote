@@ -2,16 +2,16 @@
 
 G700 Remote is a Kotlin Android companion app for Jetour G700 head units running the open-source DisplayMirror app. It connects to DisplayMirror's remote-access protocol over Bluetooth LE or LAN/mDNS and provides a focused phone remote for lock/unlock, climate, openings, lighting, charging, and vehicle telemetry that DisplayMirror exposes.
 
-This repository started from the v1.2 baseline and now tracks the functional v1.3 release. It is intended as the clean source baseline for future development, CI, Play Store preparation, and Codex-assisted changes.
+This repository started from the v1.2 baseline and now tracks the v1.4 release. It is intended as the clean source baseline for future development, CI, Play Store preparation, and Codex-assisted changes.
 
 ## Status
 
-- App version: `1.3`
+- App version: `1.4`
 - Android package: `com.mmy.g700remote`
-- `versionCode`: `4`
+- `versionCode`: `5`
 - Minimum Android: API 30
 - Target/compile SDK: API 36
-- UI: Jetpack Compose Material 3
+- UI: Jetpack Compose Material 3 with an expressive spring-motion surface system
 - Protocol: DisplayMirror remote protocol v4
 - Transports: BLE and LAN/mDNS
 - Languages: English and Arabic
@@ -45,6 +45,7 @@ For implementation details, see [docs/DISPLAYMIRROR_COMPATIBILITY.md](docs/DISPL
 ## Features
 
 - First-time setup with pairing-code entry and a link to DisplayMirror.
+- Material 3 Expressive-inspired UI with responsive spring press motion, larger tactile surfaces, and a Jetour-branded header.
 - BLE scanning, LAN/mDNS discovery, and user-selectable transport priority.
 - Smart lock/unlock home action based on returned lock state.
 - Compact vehicle telemetry tiles for battery SOC, fuel, AC, cabin/outside temperature, and coolant when returned.
@@ -56,7 +57,7 @@ For implementation details, see [docs/DISPLAYMIRROR_COMPATIBILITY.md](docs/DISPL
 - Lighting controls for hazards and Daytime Running Lights.
 - Side mirror fold/unfold controls when DisplayMirror accepts the command.
 - Share-to-car navigation: share Google Maps, `geo:` links, Google navigation links, coordinates, or place text to G700 Remote and the app forwards it to DisplayMirror.
-- Settings for language, theme, pairing, connectivity, security gate, regional features, and diagnostics.
+- Settings for merged connectivity/pairing, language, theme, security gate, regional features, and diagnostics.
 - Settings app update checker using GitHub Releases, with manual check and twice-daily background checks.
 - Local biometric/PIN gate for sensitive actions when enabled.
 - Redacted protocol log export for troubleshooting.

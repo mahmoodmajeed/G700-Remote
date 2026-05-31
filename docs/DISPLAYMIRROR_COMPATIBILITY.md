@@ -1,6 +1,6 @@
 # DisplayMirror Compatibility
 
-This document records the compatibility assumptions used for the v1.3 release. It is a source summary, not a replacement for re-checking future DisplayMirror APK releases.
+This document records the compatibility assumptions used for the v1.4 release. It is a source summary, not a replacement for re-checking future DisplayMirror APK releases.
 
 ## Head Unit Requirement
 
@@ -80,7 +80,7 @@ The app parses and displays these fields when returned:
 
 Missing fields are nullable and do not overwrite previously known values.
 
-DisplayMirror has internal vehicle fields beyond this list, but v1.3 only exposes values that the remote protocol sends to clients.
+DisplayMirror has internal vehicle fields beyond this list, but the app only exposes values that the remote protocol sends to clients.
 
 ## v1.3 Additions
 

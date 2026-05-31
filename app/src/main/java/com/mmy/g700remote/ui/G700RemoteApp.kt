@@ -1,8 +1,16 @@
 ﻿package com.mmy.g700remote.ui
 
 import android.app.Activity
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,17 +38,19 @@ import androidx.compose.material.icons.outlined.BluetoothSearching
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DirectionsCar
+import androidx.compose.material.icons.outlined.ElectricBolt
 import androidx.compose.material.icons.outlined.Lightbulb
+import androidx.compose.material.icons.outlined.LocalGasStation
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Language
-import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Thermostat
 import androidx.compose.material.icons.outlined.Warning
+import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material.icons.outlined.Window
 import androidx.compose.material3.AlertDialog
@@ -48,8 +58,6 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -84,9 +92,11 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -99,6 +109,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.mmy.g700remote.R
 import com.mmy.g700remote.BuildConfig
 import com.mmy.g700remote.ble.ConnectionPreference
 import com.mmy.g700remote.G700RemoteViewModel
@@ -235,6 +246,7 @@ fun G700RemoteApp(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = {
             SnackbarHost(
                 hostState = snackbarHostState,
@@ -534,16 +546,19 @@ private fun MainRemoteScaffold(
     }
     Scaffold(
         modifier = Modifier.padding(contentPadding),
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             ConnectionHeader(
                 state = state,
                 onRefresh = onRefresh,
-                onDisconnect = onDisconnect,
                 onOpenSettings = { tab = AppTab.Settings },
             )
         },
         bottomBar = {
-            NavigationBar {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                tonalElevation = 6.dp,
+            ) {
                 AppTab.entries.filter { it != AppTab.Settings }.forEach { item ->
                     NavigationBarItem(
                         selected = tab == item,
@@ -557,6 +572,7 @@ private fun MainRemoteScaffold(
     ) { padding ->
         val modifier = Modifier
             .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
             .padding(padding)
         when (tab) {
             AppTab.Home -> HomeScreen(state, onCommand, modifier)
@@ -584,6 +600,7 @@ private fun MainRemoteScaffold(
                 onCheckForUpdates = onCheckForUpdates,
                 onDownloadUpdate = onDownloadUpdate,
                 onShareLog = onShareLog,
+                onDisconnect = onDisconnect,
                 modifier = modifier,
             )
         }
@@ -594,29 +611,37 @@ private fun MainRemoteScaffold(
 private fun ConnectionHeader(
     state: RemoteUiState,
     onRefresh: () -> Unit,
-    onDisconnect: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
-    var menuExpanded by remember { mutableStateOf(false) }
-    Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 3.dp,
+        shadowElevation = 2.dp,
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                imageVector = if (state.connectionState is RemoteConnectionState.Ready) {
-                    state.connectionState.readyTransportIcon()
-                } else {
-                    Icons.Outlined.BluetoothSearching
-                },
-                contentDescription = null,
-                tint = state.connectionState.color(),
-            )
-            Spacer(Modifier.width(10.dp))
+            JetourHeaderMark()
+            Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(state.connectionState.label(), style = MaterialTheme.typography.titleSmall)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(state.connectionState.color(), CircleShape),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        state.connectionState.label(),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Text(
                     state.pairedDevice?.name ?: state.pairedDevice?.address ?: tr("No paired device"),
                     style = MaterialTheme.typography.bodySmall,
@@ -625,41 +650,151 @@ private fun ConnectionHeader(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            IconButton(
+            ExpressiveIconButton(
                 onClick = onRefresh,
                 enabled = state.connectionState is RemoteConnectionState.Ready,
             ) {
                 Icon(Icons.Outlined.Refresh, contentDescription = tr("Refresh status"))
             }
-            Box {
-                IconButton(onClick = { menuExpanded = true }) {
-                    Icon(Icons.Outlined.MoreVert, contentDescription = tr("More"))
-                }
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(tr("Settings")) },
-                        leadingIcon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
-                        onClick = {
-                            menuExpanded = false
-                            onOpenSettings()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(tr("Disconnect")) },
-                        leadingIcon = { Icon(Icons.Outlined.PowerSettingsNew, contentDescription = null) },
-                        onClick = {
-                            menuExpanded = false
-                            onDisconnect()
-                        },
-                    )
-                }
+            ExpressiveIconButton(onClick = onOpenSettings) {
+                Icon(Icons.Outlined.Settings, contentDescription = tr("Settings"))
             }
         }
     }
 }
+
+@Composable
+private fun JetourHeaderMark() {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary,
+        tonalElevation = 4.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_jetour_logomark),
+                contentDescription = "JETOUR",
+                modifier = Modifier.size(width = 30.dp, height = 26.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ExpressiveIconButton(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    content: @Composable () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && enabled) 0.9f else 1f,
+        animationSpec = expressiveSpring(),
+        label = "icon-press-scale",
+    )
+    Surface(
+        modifier = Modifier
+            .size(44.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clickable(
+                enabled = enabled,
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            ),
+        shape = CircleShape,
+        color = if (enabled) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun ExpressiveActionSurface(
+    modifier: Modifier = Modifier,
+    enabled: Boolean,
+    selected: Boolean,
+    danger: Boolean = false,
+    onClick: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && enabled) 0.965f else 1f,
+        animationSpec = expressiveSpring(),
+        label = "surface-press-scale",
+    )
+    val containerColor by animateColorAsState(
+        targetValue = when {
+            danger && selected -> MaterialTheme.colorScheme.errorContainer
+            selected -> MaterialTheme.colorScheme.primaryContainer
+            else -> MaterialTheme.colorScheme.surfaceContainerHigh
+        },
+        animationSpec = expressiveSpring(),
+        label = "surface-container-color",
+    )
+    val contentColor by animateColorAsState(
+        targetValue = when {
+            danger && selected -> MaterialTheme.colorScheme.onErrorContainer
+            selected -> MaterialTheme.colorScheme.onPrimaryContainer
+            else -> MaterialTheme.colorScheme.onSurface
+        },
+        animationSpec = expressiveSpring(),
+        label = "surface-content-color",
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+        } else {
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+        },
+        animationSpec = expressiveSpring(),
+        label = "surface-border-color",
+    )
+    Surface(
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clickable(
+                enabled = enabled,
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            ),
+        shape = RoundedCornerShape(22.dp),
+        color = if (enabled) containerColor else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        contentColor = if (enabled) contentColor else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+        tonalElevation = if (selected) 5.dp else 2.dp,
+        shadowElevation = if (pressed) 1.dp else 3.dp,
+        border = BorderStroke(1.dp, borderColor),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+            content = content,
+        )
+    }
+}
+
+private fun <T> expressiveSpring() = spring<T>(
+    dampingRatio = Spring.DampingRatioMediumBouncy,
+    stiffness = Spring.StiffnessMediumLow,
+)
 
 @Composable
 private fun HomeScreen(
@@ -676,20 +811,39 @@ private fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         item {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    lockLabel(state),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Spacer(Modifier.height(22.dp))
-                HeroCommandButton(
-                    text = if (lockActionIsUnlock) tr("Unlock") else tr("Lock"),
-                    icon = if (lockActionIsUnlock) Icons.Outlined.LockOpen else Icons.Outlined.Lock,
-                    enabled = ready,
-                    danger = lockActionIsUnlock,
-                    onClick = { onCommand(if (lockActionIsUnlock) RemoteCommand.Unlock else RemoteCommand.Lock) },
-                )
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(32.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                tonalElevation = 4.dp,
+                shadowElevation = 3.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)),
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(vertical = 26.dp, horizontal = 18.dp),
+                ) {
+                    Text(
+                        lockLabel(state),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                    )
+                    Text(
+                        if (ready) tr("Ready for remote commands") else tr("Connect to DisplayMirror"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(20.dp))
+                    HeroCommandButton(
+                        text = if (lockActionIsUnlock) tr("Unlock") else tr("Lock"),
+                        icon = if (lockActionIsUnlock) Icons.Outlined.LockOpen else Icons.Outlined.Lock,
+                        enabled = ready,
+                        danger = lockActionIsUnlock,
+                        onClick = { onCommand(if (lockActionIsUnlock) RemoteCommand.Unlock else RemoteCommand.Lock) },
+                    )
+                }
             }
         }
         item {
@@ -1083,6 +1237,7 @@ private fun SettingsScreen(
     onCheckForUpdates: () -> Unit,
     onDownloadUpdate: (AppUpdateInfo) -> Unit,
     onShareLog: () -> Unit,
+    onDisconnect: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var advancedExpanded by rememberSaveable { mutableStateOf(false) }
@@ -1091,6 +1246,85 @@ private fun SettingsScreen(
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
+        item {
+            Section(tr("Connectivity & pairing")) {
+                Button(
+                    onClick = onDisconnect,
+                    enabled = state.connectionState is RemoteConnectionState.Ready,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(22.dp),
+                ) {
+                    Icon(Icons.Outlined.PowerSettingsNew, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(tr("Disconnect"))
+                }
+                Spacer(Modifier.height(10.dp))
+                MetricRow(tr("State"), state.connectionState.label())
+                MetricRow(tr("Active"), state.connectionState.activeTransportLabel())
+                MetricRow(tr("Device"), state.pairedDevice?.name ?: tr("Unnamed"))
+                MetricRow(tr("Address"), state.pairedDevice?.address ?: tr("not paired"))
+                MetricRow(tr("Transport"), state.pairedDevice?.transport?.label() ?: tr("Unknown"))
+                Spacer(Modifier.height(10.dp))
+                PairingCodeField(
+                    value = state.pairingCode,
+                    onValueChange = onPairingCodeChanged,
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(onClick = onStartScan, modifier = Modifier.weight(1f), shape = RoundedCornerShape(20.dp)) {
+                        Icon(Icons.Outlined.BluetoothSearching, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(tr("Scan"))
+                    }
+                    OutlinedButton(onClick = onClearPairing, modifier = Modifier.weight(1f), shape = RoundedCornerShape(20.dp)) {
+                        Icon(Icons.Outlined.Delete, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(tr("Clear"))
+                    }
+                }
+                if (state.isScanning) {
+                    Spacer(Modifier.height(12.dp))
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+                Spacer(Modifier.height(14.dp))
+                ProtocolSwitchRow(
+                    title = tr("Bluetooth LE"),
+                    subtitle = tr("Best for close range and remote-key use."),
+                    checked = state.bleEnabled,
+                    icon = Icons.Outlined.Bluetooth,
+                    onCheckedChange = onBleEnabledChanged,
+                )
+                ProtocolSwitchRow(
+                    title = tr("LAN / mDNS"),
+                    subtitle = tr("Uses CarKey on _carkey._tcp. port 9274 when the phone and head unit share a network."),
+                    checked = state.lanEnabled,
+                    icon = Icons.Outlined.Wifi,
+                    onCheckedChange = onLanEnabledChanged,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(tr("Priority"), fontWeight = FontWeight.Medium)
+                Spacer(Modifier.height(6.dp))
+                PreferenceSelector(
+                    preference = state.connectionPreference,
+                    onPreference = onConnectionPreferenceChanged,
+                )
+            }
+        }
+        items(state.scanResults, key = { it.address }) { device ->
+            ElevatedCard(onClick = { onPair(device) }, shape = RoundedCornerShape(8.dp)) {
+                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(if (device.transport == TransportKind.Lan) Icons.Outlined.Wifi else Icons.Outlined.Bluetooth, contentDescription = null)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(device.name ?: tr("Unnamed"))
+                        Text(
+                            "${device.transport.label()}  ${device.address}${if (device.transport == TransportKind.Ble) "  RSSI ${device.rssi}" else ""}",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
+        }
         item {
             Section(tr("Language")) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -1113,77 +1347,6 @@ private fun SettingsScreen(
                     selected = state.appTheme,
                     onTheme = onAppThemeChanged,
                 )
-            }
-        }
-        item {
-            Section(tr("Pairing")) {
-                PairingCodeField(
-                    value = state.pairingCode,
-                    onValueChange = onPairingCodeChanged,
-                )
-                Spacer(Modifier.height(8.dp))
-                MetricRow(tr("Device"), state.pairedDevice?.name ?: tr("Unnamed"))
-                MetricRow(tr("Address"), state.pairedDevice?.address ?: tr("not paired"))
-                MetricRow(tr("Transport"), state.pairedDevice?.transport?.label() ?: tr("Unknown"))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(onClick = onStartScan, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Outlined.BluetoothSearching, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(tr("Scan"))
-                    }
-                    OutlinedButton(onClick = onClearPairing, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Outlined.Delete, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(tr("Clear"))
-                    }
-                }
-                if (state.isScanning) {
-                    Spacer(Modifier.height(12.dp))
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
-            }
-        }
-        items(state.scanResults, key = { it.address }) { device ->
-            ElevatedCard(onClick = { onPair(device) }, shape = RoundedCornerShape(8.dp)) {
-                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(if (device.transport == TransportKind.Lan) Icons.Outlined.Wifi else Icons.Outlined.Bluetooth, contentDescription = null)
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(device.name ?: tr("Unnamed"))
-                        Text(
-                            "${device.transport.label()}  ${device.address}${if (device.transport == TransportKind.Ble) "  RSSI ${device.rssi}" else ""}",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
-            }
-        }
-        item {
-            Section(tr("Connectivity")) {
-                ProtocolSwitchRow(
-                    title = tr("Bluetooth LE"),
-                    subtitle = tr("Best for close range and remote-key use."),
-                    checked = state.bleEnabled,
-                    icon = Icons.Outlined.Bluetooth,
-                    onCheckedChange = onBleEnabledChanged,
-                )
-                ProtocolSwitchRow(
-                    title = tr("LAN / mDNS"),
-                    subtitle = tr("Uses CarKey on _carkey._tcp. port 9274 when the phone and head unit share a network."),
-                    checked = state.lanEnabled,
-                    icon = Icons.Outlined.Wifi,
-                    onCheckedChange = onLanEnabledChanged,
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(tr("Priority"), fontWeight = FontWeight.Medium)
-                Spacer(Modifier.height(6.dp))
-                PreferenceSelector(
-                    preference = state.connectionPreference,
-                    onPreference = onConnectionPreferenceChanged,
-                )
-                Spacer(Modifier.height(8.dp))
-                MetricRow(tr("Active"), state.connectionState.activeTransportLabel())
-                MetricRow(tr("State"), state.connectionState.label())
             }
         }
         item {
@@ -1387,22 +1550,41 @@ private fun TemperatureControlCard(
 ) {
     Surface(
         modifier = modifier,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(24.dp),
+        tonalElevation = 3.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)),
     ) {
         Column(
-            modifier = Modifier.padding(10.dp),
+            modifier = Modifier.padding(12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(4.dp))
-            Text(formatTemp(value), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text(
+                formatTemp(value),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = if (enabled) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(onClick = { onValue(value - 0.5) }, enabled = enabled, modifier = Modifier.weight(1f)) {
+                Button(
+                    onClick = { onValue(value - 0.5) },
+                    enabled = enabled,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(18.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                ) {
                     Text("-")
                 }
-                OutlinedButton(onClick = { onValue(value + 0.5) }, enabled = enabled, modifier = Modifier.weight(1f)) {
+                Button(
+                    onClick = { onValue(value + 0.5) },
+                    enabled = enabled,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(18.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                ) {
                     Text("+")
                 }
             }
@@ -1432,6 +1614,20 @@ private fun FanBarControl(
         ) {
             (1..maxLevel).forEach { level ->
                 val active = displayLevel >= level
+                val barColor by animateColorAsState(
+                    targetValue = if (active) {
+                        MaterialTheme.colorScheme.secondary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.20f)
+                    },
+                    animationSpec = expressiveSpring(),
+                    label = "fan-bar-color",
+                )
+                val barHeight by animateDpAsState(
+                    targetValue = (18 + level * 3 + if (active) 4 else 0).dp,
+                    animationSpec = expressiveSpring(),
+                    label = "fan-bar-height",
+                )
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -1441,14 +1637,10 @@ private fun FanBarControl(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height((18 + level * 3).dp)
+                            .height(barHeight)
                             .background(
-                                color = if (active) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.22f)
-                                },
-                                shape = RoundedCornerShape(4.dp),
+                                color = barColor,
+                                shape = RoundedCornerShape(8.dp),
                             ),
                     )
                 }
@@ -1488,23 +1680,23 @@ private fun ModeToggleBox(
     modifier: Modifier = Modifier,
 ) {
     val active = spec.checked == true
-    OutlinedButton(
-        onClick = { if (active) spec.onOff() else spec.onOn() },
+    ExpressiveActionSurface(
+        modifier = modifier.height(70.dp),
         enabled = enabled,
-        modifier = modifier.height(62.dp),
-        shape = RoundedCornerShape(8.dp),
-        contentPadding = PaddingValues(8.dp),
-        colors = if (active) {
-            ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-        } else {
-            ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surface)
-        },
+        selected = active,
+        onClick = { if (active) spec.onOff() else spec.onOn() },
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Icon(spec.icon, contentDescription = null, modifier = Modifier.size(18.dp))
+            Icon(spec.icon, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(spec.label, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    spec.label,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
                 Text(
                     when (spec.checked) {
                         true -> tr("On")
@@ -1531,22 +1723,25 @@ private fun ActionBoxGrid(
         actions.chunked(columns).forEach { rowActions ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 rowActions.forEach { action ->
-                    OutlinedButton(
-                        onClick = action.onClick,
+                    ExpressiveActionSurface(
                         enabled = enabled,
+                        selected = false,
+                        onClick = action.onClick,
                         modifier = if (fullWidthLastSingle && rowActions.size == 1) {
-                            Modifier.fillMaxWidth().height(58.dp)
+                            Modifier.fillMaxWidth().height(66.dp)
                         } else {
-                            Modifier.weight(1f).height(58.dp)
+                            Modifier.weight(1f).height(66.dp)
                         },
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(6.dp),
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                            Icon(action.icon, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.height(4.dp))
-                            Text(action.label, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
-                        }
+                        Icon(action.icon, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.height(5.dp))
+                        Text(
+                            action.label,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
                     }
                 }
                 repeat(if (fullWidthLastSingle && rowActions.size == 1) 0 else columns - rowActions.size) {
@@ -1561,15 +1756,15 @@ private fun ActionBoxGrid(
 private fun TelemetryGrid(state: RemoteUiState) {
     Section(tr("Vehicle")) {
         val tiles = listOf(
-            TileData(tr("Battery"), state.telemetry.batterySoc?.let { "$it%" } ?: tr("Unknown"), Icons.Outlined.Bolt),
-            TileData(tr("Fuel"), state.telemetry.fuelPercent?.let { "$it%" } ?: tr("Unknown"), Icons.Outlined.DirectionsCar),
+            TileData(tr("Battery"), state.telemetry.batterySoc?.let { "$it%" } ?: tr("Unknown"), Icons.Outlined.ElectricBolt),
+            TileData(tr("Fuel"), state.telemetry.fuelPercent?.let { "$it%" } ?: tr("Unknown"), Icons.Outlined.LocalGasStation),
             TileData(tr("AC"), when (state.telemetry.acOn) {
                 true -> tr("On")
                 false -> tr("Off")
                 null -> tr("Unknown")
             }, Icons.Outlined.AcUnit),
             TileData(tr("Cabin"), state.telemetry.cabinTemp?.let { formatTemp(it) } ?: tr("Unknown"), Icons.Outlined.Thermostat),
-            TileData(tr("Coolant"), state.telemetry.coolantTemp?.let { formatTemp(it) } ?: tr("Unknown"), Icons.Outlined.Thermostat),
+            TileData(tr("Coolant"), state.telemetry.coolantTemp?.let { formatTemp(it) } ?: tr("Unknown"), Icons.Outlined.WaterDrop),
             TileData(tr("Outside"), state.telemetry.outdoorTemp?.let { formatTemp(it) } ?: tr("Unknown"), Icons.Outlined.Air),
         )
         tiles.chunked(3).forEachIndexed { index, rowTiles ->
@@ -1594,17 +1789,24 @@ private fun Section(
     title: String,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
         Surface(
-            shape = RoundedCornerShape(8.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 1.dp,
+            shape = RoundedCornerShape(26.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            tonalElevation = 3.dp,
+            shadowElevation = 2.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)),
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(14.dp),
+                    .padding(16.dp),
                 content = content,
             )
         }
@@ -1703,23 +1905,43 @@ private fun HeroCommandButton(
     danger: Boolean = false,
     onClick: () -> Unit,
 ) {
-    val colors = if (danger) {
-        ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-    } else {
-        ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-    }
-    Button(
-        onClick = onClick,
-        enabled = enabled,
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && enabled) 0.94f else 1f,
+        animationSpec = expressiveSpring(),
+        label = "hero-command-scale",
+    )
+    val size by animateDpAsState(
+        targetValue = if (pressed && enabled) 124.dp else 136.dp,
+        animationSpec = expressiveSpring(),
+        label = "hero-command-size",
+    )
+    Surface(
+        modifier = Modifier
+            .size(size)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clickable(
+                enabled = enabled,
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            ),
         shape = CircleShape,
-        colors = colors,
-        contentPadding = PaddingValues(0.dp),
-        modifier = Modifier.size(132.dp),
+        color = if (danger) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primary,
+        contentColor = if (danger) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimary,
+        tonalElevation = 6.dp,
+        shadowElevation = 7.dp,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(34.dp))
-            Spacer(Modifier.height(8.dp))
-            Text(text, fontWeight = FontWeight.SemiBold)
+        Box(contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(36.dp))
+                Spacer(Modifier.height(9.dp))
+                Text(text, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
@@ -1788,16 +2010,27 @@ private fun SegmentedChoice(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && enabled) 0.96f else 1f,
+        animationSpec = expressiveSpring(),
+        label = "segmented-choice-scale",
+    )
     OutlinedButton(
         onClick = onClick,
         enabled = enabled,
-        shape = RoundedCornerShape(8.dp),
-        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        modifier = modifier.graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        },
         contentPadding = PaddingValues(horizontal = 12.dp),
+        interactionSource = interactionSource,
         colors = if (selected) {
             ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
         } else {
-            ButtonDefaults.outlinedButtonColors()
+            ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest)
         },
     ) {
         Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -1958,11 +2191,13 @@ private fun SeatControlBox(
 ) {
     Surface(
         modifier = modifier,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(22.dp),
+        tonalElevation = 2.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f)),
     ) {
         Column(
-            modifier = Modifier.padding(10.dp),
+            modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(9.dp),
         ) {
             Text(tr(seat.label), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -2152,8 +2387,10 @@ private fun MetricTile(
 ) {
     Surface(
         modifier = modifier,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(22.dp),
+        tonalElevation = 2.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f)),
     ) {
         Column(
             modifier = Modifier
@@ -2167,7 +2404,7 @@ private fun MetricTile(
             }
             Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(2.dp))
-            Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -2311,6 +2548,8 @@ private val ArabicTranslations = mapOf(
     "Locked" to "مقفلة",
     "Unlocked" to "مفتوحة",
     "Lock state Unknown" to "حالة القفل غير معروفة",
+    "Ready for remote commands" to "جاهز لأوامر التحكم عن بعد",
+    "Connect to DisplayMirror" to "اتصل بتطبيق DisplayMirror",
     "Raw state" to "القيمة الخام",
     "Unknown" to "غير معروف",
     "Quick Actions" to "إجراءات سريعة",
@@ -2398,6 +2637,7 @@ private val ArabicTranslations = mapOf(
     "not paired" to "غير مقترن",
     "Transport" to "طريقة الاتصال",
     "Connectivity" to "الاتصال",
+    "Connectivity & pairing" to "الاتصال والاقتران",
     "Bluetooth LE" to "بلوتوث LE",
     "Best for close range and remote-key use." to "الأفضل للاستخدام القريب كمفتاح عن بعد.",
     "LAN / mDNS" to "الشبكة المحلية / mDNS",
