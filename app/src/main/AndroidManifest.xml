@@ -25,6 +25,8 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>
     <uses-permission
@@ -71,6 +73,11 @@
                 <data android:scheme="https" android:host="www.google.com" android:pathPrefix="/maps"/>
             </intent-filter>
         </activity>
+
+        <service
+                android:name=".ConnectedCarNotificationService"
+                android:exported="false"
+                android:foregroundServiceType="connectedDevice"/>
 
         <provider
                 android:name="androidx.core.content.FileProvider"

@@ -93,6 +93,8 @@ DisplayMirror has internal vehicle fields beyond this list, but the app only exp
 
 - Google Maps shares may arrive as long URLs, short `maps.app.goo.gl` URLs, `/@lat,lon` paths, or embedded `!3d...!4d...` data. The phone app resolves redirects and extracts coordinates before sending `navigate`; unresolved Google short links are not forwarded as raw search text because Google Maps on the head unit treats them as an invalid destination query.
 - Shared destinations are stored locally for resend/delete history. The history is phone-local and not synced.
+- Last-known returned vehicle status is stored locally on the phone for offline display. It is read-only context; controls remain disabled unless DisplayMirror is connected.
+- The connected notification uses the same repository/transport as the open app. It is only kept alive while connected and stops when the connection drops or the user disables the setting.
 - DisplayMirror protocol v4 exposes `climate` `ac_on` and `ac_off`, but the reviewed source maps that to the A/C compressor state. The reviewed remote handler does not expose `setHvacOff()`. The phone app therefore treats cabin air as start-only from the phone by setting a moderate fan speed and keeps compressor control separate.
 - No remote Auto climate command was found in the reviewed DisplayMirror protocol. Auto mode is not exposed by the phone app.
 - Auto defrost uses DisplayMirror's `auto_defrost_on` / `auto_defrost_off` actions and returned `autoDefrost` state. Validate behavior against the vehicle because this state is sourced from the head-unit app.

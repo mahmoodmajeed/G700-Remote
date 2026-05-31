@@ -54,6 +54,11 @@ data class VehicleTelemetry(
     val seatVentLevels: Map<String, Int> = emptyMap(),
 )
 
+data class VehicleStatusSnapshot(
+    val telemetry: VehicleTelemetry,
+    val lastRefreshMillis: Long,
+)
+
 data class CarLocation(
     val lat: Double,
     val lon: Double,
@@ -110,6 +115,11 @@ enum class AppColorMode {
     Light,
 }
 
+enum class LockCommandProgress {
+    Locking,
+    Unlocking,
+}
+
 data class NavigationHistoryEntry(
     val id: Long,
     val title: String,
@@ -159,6 +169,10 @@ data class RemoteUiState(
     val carLocation: CarLocation? = null,
     val navigationHistory: List<NavigationHistoryEntry> = emptyList(),
     val demoMode: Boolean = false,
+    val connectedNotificationEnabled: Boolean = true,
+    val lastStatusRefreshMillis: Long? = null,
+    val pendingLockCommand: LockCommandProgress? = null,
+    val lastSeenReleaseNotesVersion: String? = null,
     val lastNavigationStatus: String? = null,
     val lastError: String? = null,
 )

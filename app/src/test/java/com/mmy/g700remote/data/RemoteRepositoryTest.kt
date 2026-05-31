@@ -34,10 +34,28 @@ class RemoteRepositoryTest {
         assertEquals(device.address, repository.uiState.value.pairedDevice?.address)
         assertTrue(repository.uiState.value.connectionState is RemoteConnectionState.Ready)
         assertNotNull(repository.uiState.value.telemetry.batterySoc)
+        assertNotNull(repository.uiState.value.lastStatusRefreshMillis)
 
         repository.send(RemoteCommand.Unlock)
         advanceUntilIdle()
         assertEquals(2, repository.uiState.value.telemetry.lockState)
+        assertEquals(null, repository.uiState.value.pendingLockCommand)
+        coroutineContext.cancelChildren()
+    }
+
+    @Test
+    fun loadsLastVehicleSnapshotWhenOffline() = runTest {
+        val snapshot = VehicleStatusSnapshot(
+            telemetry = VehicleTelemetry(lockState = 1, batterySoc = 61, fuelPercent = 42),
+            lastRefreshMillis = 123_456L,
+        )
+        val settings = InMemorySettingsStore(initialSnapshot = snapshot)
+        val repository = RemoteRepository(FakeDisplayMirrorTransport(), settings, this)
+
+        assertTrue(repository.uiState.value.connectionState is RemoteConnectionState.Disconnected)
+        assertEquals(61, repository.uiState.value.telemetry.batterySoc)
+        assertEquals(42, repository.uiState.value.telemetry.fuelPercent)
+        assertEquals(123_456L, repository.uiState.value.lastStatusRefreshMillis)
         coroutineContext.cancelChildren()
     }
 
@@ -79,6 +97,7 @@ class RemoteRepositoryTest {
 
     private class InMemorySettingsStore(
         initialHistory: List<NavigationHistoryEntry> = emptyList(),
+        initialSnapshot: VehicleStatusSnapshot? = null,
     ) : SettingsStore {
         private var paired: PairedDevice? = null
         private var auth = true
@@ -91,7 +110,10 @@ class RemoteRepositoryTest {
         private var theme = AppTheme.G700Horizon
         private var colorMode = AppColorMode.Dark
         private var history = initialHistory
+        private var snapshot = initialSnapshot
         private var regionalFeatures = false
+        private var notificationEnabled = true
+        private var releaseNotesVersion: String? = null
 
         override fun getPairedDevice(): PairedDevice? = paired
         override fun savePairedDevice(device: PairedDevice) {
@@ -144,6 +166,18 @@ class RemoteRepositoryTest {
             this.history = history
         }
 
+        override fun getLastVehicleStatus(): VehicleStatusSnapshot? = snapshot
+
+        override fun saveLastVehicleStatus(snapshot: VehicleStatusSnapshot) {
+            this.snapshot = snapshot
+        }
+
+        override fun isConnectedNotificationEnabled(): Boolean = notificationEnabled
+
+        override fun setConnectedNotificationEnabled(enabled: Boolean) {
+            notificationEnabled = enabled
+        }
+
         override fun areRegionalFeaturesEnabled(): Boolean = regionalFeatures
         override fun setRegionalFeaturesEnabled(enabled: Boolean) {
             regionalFeatures = enabled
@@ -162,5 +196,11 @@ class RemoteRepositoryTest {
         override fun isLoggingEnabled(): Boolean = false
 
         override fun setLoggingEnabled(enabled: Boolean) = Unit
+
+        override fun getLastSeenReleaseNotesVersion(): String? = releaseNotesVersion
+
+        override fun setLastSeenReleaseNotesVersion(version: String) {
+            releaseNotesVersion = version
+        }
     }
 }

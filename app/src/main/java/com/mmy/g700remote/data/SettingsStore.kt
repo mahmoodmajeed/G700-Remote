@@ -22,6 +22,10 @@ interface SettingsStore {
     fun setAppColorMode(mode: AppColorMode)
     fun getNavigationHistory(): List<NavigationHistoryEntry>
     fun saveNavigationHistory(history: List<NavigationHistoryEntry>)
+    fun getLastVehicleStatus(): VehicleStatusSnapshot?
+    fun saveLastVehicleStatus(snapshot: VehicleStatusSnapshot)
+    fun isConnectedNotificationEnabled(): Boolean
+    fun setConnectedNotificationEnabled(enabled: Boolean)
     fun areRegionalFeaturesEnabled(): Boolean
     fun setRegionalFeaturesEnabled(enabled: Boolean)
     fun isLocalAuthEnabled(): Boolean
@@ -30,4 +34,6 @@ interface SettingsStore {
     fun setLockStateMapping(mapping: LockStateMapping)
     fun isLoggingEnabled(): Boolean
     fun setLoggingEnabled(enabled: Boolean)
+    fun getLastSeenReleaseNotesVersion(): String?
+    fun setLastSeenReleaseNotesVersion(version: String)
 }

@@ -35,9 +35,11 @@ class RemoteRepository(
     private val settings: SettingsStore,
     private val scope: CoroutineScope,
 ) {
+    private val storedStatus = settings.getLastVehicleStatus()
     private val _uiState = MutableStateFlow(
         RemoteUiState(
             pairedDevice = settings.getPairedDevice(),
+            telemetry = storedStatus?.telemetry ?: VehicleTelemetry(),
             pairingCode = settings.getPairingCode(),
             bleEnabled = settings.isBleEnabled(),
             lanEnabled = settings.isLanEnabled(),
@@ -50,12 +52,16 @@ class RemoteRepository(
             lockStateMapping = LockStateMapping.State1Locked,
             loggingEnabled = settings.isLoggingEnabled(),
             navigationHistory = settings.getNavigationHistory(),
+            connectedNotificationEnabled = settings.isConnectedNotificationEnabled(),
+            lastStatusRefreshMillis = storedStatus?.lastRefreshMillis,
+            lastSeenReleaseNotesVersion = settings.getLastSeenReleaseNotesVersion(),
         ),
     )
     val uiState: StateFlow<RemoteUiState> = _uiState.asStateFlow()
 
     private var scanJob: Job? = null
     private var refreshJob: Job? = null
+    private var backgroundRefreshJob: Job? = null
     private var backgroundDisconnectJob: Job? = null
 
     init {
@@ -172,6 +178,20 @@ class RemoteRepository(
         }
     }
 
+    fun setConnectedNotificationEnabled(enabled: Boolean) {
+        settings.setConnectedNotificationEnabled(enabled)
+        _uiState.update { it.copy(connectedNotificationEnabled = enabled) }
+        if (!enabled && _uiState.value.connectionState !is RemoteConnectionState.Ready) {
+            backgroundRefreshJob?.cancel()
+            backgroundRefreshJob = null
+        }
+    }
+
+    fun markReleaseNotesSeen(version: String) {
+        settings.setLastSeenReleaseNotesVersion(version)
+        _uiState.update { it.copy(lastSeenReleaseNotesVersion = version) }
+    }
+
     fun setPairingCode(code: String) {
         settings.setPairingCode(code)
         _uiState.update { it.copy(pairingCode = settings.getPairingCode()) }
@@ -217,6 +237,9 @@ class RemoteRepository(
 
     fun onForeground() {
         backgroundDisconnectJob?.cancel()
+        backgroundDisconnectJob = null
+        backgroundRefreshJob?.cancel()
+        backgroundRefreshJob = null
         if (_uiState.value.pairedDevice != null) {
             connectSaved()
         }
@@ -227,9 +250,16 @@ class RemoteRepository(
         refreshJob?.cancel()
         refreshJob = null
         backgroundDisconnectJob?.cancel()
-        backgroundDisconnectJob = scope.launch {
-            delay(60_000)
-            transport.disconnect()
+        backgroundDisconnectJob = null
+        if (_uiState.value.connectedNotificationEnabled && _uiState.value.connectionState is RemoteConnectionState.Ready) {
+            startBackgroundRefresh()
+        } else {
+            backgroundRefreshJob?.cancel()
+            backgroundRefreshJob = null
+            backgroundDisconnectJob = scope.launch {
+                delay(60_000)
+                transport.disconnect()
+            }
         }
     }
 
@@ -349,6 +379,11 @@ class RemoteRepository(
     }
 
     fun send(command: RemoteCommand) {
+        when (command) {
+            RemoteCommand.Lock -> _uiState.update { it.copy(pendingLockCommand = LockCommandProgress.Locking) }
+            RemoteCommand.Unlock -> _uiState.update { it.copy(pendingLockCommand = LockCommandProgress.Unlocking) }
+            else -> Unit
+        }
         scope.launch {
             sendImmediate(command)
         }
@@ -367,6 +402,20 @@ class RemoteRepository(
         }
     }
 
+    private fun startBackgroundRefresh() {
+        if (backgroundRefreshJob?.isActive == true) return
+        backgroundRefreshJob = scope.launch {
+            while (true) {
+                if (_uiState.value.connectionState is RemoteConnectionState.Ready) {
+                    refreshAll()
+                    delay(120_000)
+                } else {
+                    break
+                }
+            }
+        }
+    }
+
     private suspend fun refreshAll() {
         sendForRefresh(RemoteCommand.Status)
         sendForRefresh(RemoteCommand.Climate(ClimateAction.Status))
@@ -379,8 +428,15 @@ class RemoteRepository(
         runCatching {
             appendLog(ProtocolLogEntry.Direction.Tx, RemoteProtocolCodec.encodeCommand(command))
             val response = transport.send(command)
-            applyResponse(response, showNavigationStatus = showNavigationStatus)
-            if (response !is RemoteResponse.Error) {
+            val lockCommand = command == RemoteCommand.Lock || command == RemoteCommand.Unlock
+            if (response is RemoteResponse.Error) {
+                applyResponse(response, showNavigationStatus = showNavigationStatus)
+            } else if (lockCommand) {
+                success = true
+                delay(2_000)
+                sendForRefresh(RemoteCommand.Status)
+            } else {
+                applyResponse(response, showNavigationStatus = showNavigationStatus)
                 success = true
                 applyCommandEcho(command)
                 if (command is RemoteCommand.Climate && command.action != ClimateAction.Status) {
@@ -392,6 +448,10 @@ class RemoteRepository(
             val message = throwable.message ?: "Command failed"
             appendLog(ProtocolLogEntry.Direction.Info, "Command failed: $message")
             _uiState.update { it.copy(lastError = message) }
+        }.also {
+            if (command == RemoteCommand.Lock || command == RemoteCommand.Unlock) {
+                _uiState.update { it.copy(pendingLockCommand = null) }
+            }
         }
         return success
     }
@@ -423,59 +483,53 @@ class RemoteRepository(
 
     private fun applyResponse(response: RemoteResponse, showNavigationStatus: Boolean = true) {
         when (response) {
-            is RemoteResponse.LockState -> _uiState.update {
-                it.copy(
-                    telemetry = it.telemetry.copy(
-                        lockState = response.state ?: it.telemetry.lockState,
-                        cabinTemp = response.cabinTemp ?: it.telemetry.cabinTemp,
-                        outdoorTemp = response.outdoorTemp ?: it.telemetry.outdoorTemp,
-                        coolantTemp = response.coolantTemp ?: it.telemetry.coolantTemp,
-                        batterySoc = response.batterySoc ?: it.telemetry.batterySoc,
-                        fuelPercent = response.fuelPercent ?: it.telemetry.fuelPercent,
-                        acOn = response.acOn ?: it.telemetry.acOn,
-                        chargingState = response.chargingState ?: it.telemetry.chargingState,
-                        chargeRemainTime = response.chargeRemainTime ?: it.telemetry.chargeRemainTime,
-                        packVoltage = response.packVoltage ?: it.telemetry.packVoltage,
-                        packCurrent = response.packCurrent ?: it.telemetry.packCurrent,
-                        packPower = response.packPower ?: it.telemetry.packPower,
-                        chargeMode = response.chargeMode ?: it.telemetry.chargeMode,
-                        parkingChargeTargetSoc = response.parkingChargeTargetSoc ?: it.telemetry.parkingChargeTargetSoc,
-                        parkingChargeEtaMin = response.parkingChargeEtaMin ?: it.telemetry.parkingChargeEtaMin,
-                        dischargeEtaMin = response.dischargeEtaMin ?: it.telemetry.dischargeEtaMin,
-                        safetySocFloor = response.safetySocFloor ?: it.telemetry.safetySocFloor,
-                        raceChargeActive = response.raceChargeActive ?: it.telemetry.raceChargeActive,
-                        raceChargeTarget = response.raceChargeTarget ?: it.telemetry.raceChargeTarget,
-                        raceChargeEtaMin = response.raceChargeEtaMin ?: it.telemetry.raceChargeEtaMin,
-                    ),
+            is RemoteResponse.LockState -> updateTelemetry { telemetry ->
+                telemetry.copy(
+                    lockState = response.state ?: telemetry.lockState,
+                    cabinTemp = response.cabinTemp ?: telemetry.cabinTemp,
+                    outdoorTemp = response.outdoorTemp ?: telemetry.outdoorTemp,
+                    coolantTemp = response.coolantTemp ?: telemetry.coolantTemp,
+                    batterySoc = response.batterySoc ?: telemetry.batterySoc,
+                    fuelPercent = response.fuelPercent ?: telemetry.fuelPercent,
+                    acOn = response.acOn ?: telemetry.acOn,
+                    chargingState = response.chargingState ?: telemetry.chargingState,
+                    chargeRemainTime = response.chargeRemainTime ?: telemetry.chargeRemainTime,
+                    packVoltage = response.packVoltage ?: telemetry.packVoltage,
+                    packCurrent = response.packCurrent ?: telemetry.packCurrent,
+                    packPower = response.packPower ?: telemetry.packPower,
+                    chargeMode = response.chargeMode ?: telemetry.chargeMode,
+                    parkingChargeTargetSoc = response.parkingChargeTargetSoc ?: telemetry.parkingChargeTargetSoc,
+                    parkingChargeEtaMin = response.parkingChargeEtaMin ?: telemetry.parkingChargeEtaMin,
+                    dischargeEtaMin = response.dischargeEtaMin ?: telemetry.dischargeEtaMin,
+                    safetySocFloor = response.safetySocFloor ?: telemetry.safetySocFloor,
+                    raceChargeActive = response.raceChargeActive ?: telemetry.raceChargeActive,
+                    raceChargeTarget = response.raceChargeTarget ?: telemetry.raceChargeTarget,
+                    raceChargeEtaMin = response.raceChargeEtaMin ?: telemetry.raceChargeEtaMin,
                 )
             }
 
-            is RemoteResponse.ClimateState -> _uiState.update {
-                it.copy(
-                    telemetry = it.telemetry.copy(
-                        acOn = response.acOn ?: it.telemetry.acOn,
-                        tempLeft = response.tempLeft ?: it.telemetry.tempLeft,
-                        tempRight = response.tempRight ?: it.telemetry.tempRight,
-                        fanSpeed = response.fanSpeed ?: it.telemetry.fanSpeed,
-                        circulation = response.circulation ?: it.telemetry.circulation,
-                        fastCool = response.fastCool ?: it.telemetry.fastCool,
-                        fastHeat = response.fastHeat ?: it.telemetry.fastHeat,
-                        autoDefrost = response.autoDefrost ?: it.telemetry.autoDefrost,
-                        rearDefrost = response.rearDefrost ?: it.telemetry.rearDefrost,
-                        cabinTemp = response.cabinTemp ?: it.telemetry.cabinTemp,
-                        outdoorTemp = response.outdoorTemp ?: it.telemetry.outdoorTemp,
-                        coolantTemp = response.coolantTemp ?: it.telemetry.coolantTemp,
-                    ),
+            is RemoteResponse.ClimateState -> updateTelemetry { telemetry ->
+                telemetry.copy(
+                    acOn = response.acOn ?: telemetry.acOn,
+                    tempLeft = response.tempLeft ?: telemetry.tempLeft,
+                    tempRight = response.tempRight ?: telemetry.tempRight,
+                    fanSpeed = response.fanSpeed ?: telemetry.fanSpeed,
+                    circulation = response.circulation ?: telemetry.circulation,
+                    fastCool = response.fastCool ?: telemetry.fastCool,
+                    fastHeat = response.fastHeat ?: telemetry.fastHeat,
+                    autoDefrost = response.autoDefrost ?: telemetry.autoDefrost,
+                    rearDefrost = response.rearDefrost ?: telemetry.rearDefrost,
+                    cabinTemp = response.cabinTemp ?: telemetry.cabinTemp,
+                    outdoorTemp = response.outdoorTemp ?: telemetry.outdoorTemp,
+                    coolantTemp = response.coolantTemp ?: telemetry.coolantTemp,
                 )
             }
 
-            is RemoteResponse.ParkingChargeState -> _uiState.update {
-                it.copy(
-                    telemetry = it.telemetry.copy(
-                        parkingChargeTargetSoc = response.target ?: it.telemetry.parkingChargeTargetSoc,
-                        parkingChargeSwitchState = response.switchState ?: it.telemetry.parkingChargeSwitchState,
-                        parkingChargeMode = response.mode ?: it.telemetry.parkingChargeMode,
-                    ),
+            is RemoteResponse.ParkingChargeState -> updateTelemetry { telemetry ->
+                telemetry.copy(
+                    parkingChargeTargetSoc = response.target ?: telemetry.parkingChargeTargetSoc,
+                    parkingChargeSwitchState = response.switchState ?: telemetry.parkingChargeSwitchState,
+                    parkingChargeMode = response.mode ?: telemetry.parkingChargeMode,
                 )
             }
 
@@ -533,42 +587,45 @@ class RemoteRepository(
         when (command) {
             RemoteCommand.Lock -> _uiState.update { state ->
                 state.copy(telemetry = state.telemetry.copy(lockState = 1))
-            }
+            }.also { persistSnapshot() }
 
             RemoteCommand.Unlock -> _uiState.update { state ->
                 state.copy(telemetry = state.telemetry.copy(lockState = 2))
-            }
+            }.also { persistSnapshot() }
 
             is RemoteCommand.Hazards -> _uiState.update { state ->
                 state.copy(telemetry = state.telemetry.copy(hazardsOn = command.action == OnOffAction.On))
-            }
+            }.also { persistSnapshot() }
 
             is RemoteCommand.Drl -> _uiState.update { state ->
                 state.copy(telemetry = state.telemetry.copy(drlOn = command.action == OnOffAction.On))
-            }
+            }.also { persistSnapshot() }
 
             is RemoteCommand.Climate -> {
                 when (command.action) {
                     ClimateAction.AcOn -> _uiState.update { state ->
                         state.copy(telemetry = state.telemetry.copy(acOn = true))
-                    }
+                    }.also { persistSnapshot() }
                     ClimateAction.AcOff -> _uiState.update { state ->
                         state.copy(telemetry = state.telemetry.copy(acOn = false))
-                    }
+                    }.also { persistSnapshot() }
                     ClimateAction.SetTempLeft -> command.numericValue?.toDouble()?.let { value ->
                         _uiState.update { state ->
                             state.copy(telemetry = state.telemetry.copy(tempLeft = value))
                         }
+                        persistSnapshot()
                     }
                     ClimateAction.SetTempRight -> command.numericValue?.toDouble()?.let { value ->
                         _uiState.update { state ->
                             state.copy(telemetry = state.telemetry.copy(tempRight = value))
                         }
+                        persistSnapshot()
                     }
                     ClimateAction.SetFanSpeed -> command.numericValue?.toInt()?.let { value ->
                         _uiState.update { state ->
                             state.copy(telemetry = state.telemetry.copy(fanSpeed = value.coerceIn(0, 10)))
                         }
+                        persistSnapshot()
                     }
                     ClimateAction.FastCoolOn -> echoClimate { it.copy(fastCool = true) }
                     ClimateAction.FastCoolOff -> echoClimate { it.copy(fastCool = false) }
@@ -578,23 +635,29 @@ class RemoteRepository(
                     ClimateAction.AutoDefrostOff -> echoClimate { it.copy(autoDefrost = false) }
                     ClimateAction.RearDefrostOn -> echoClimate { it.copy(rearDefrost = true) }
                     ClimateAction.RearDefrostOff -> echoClimate { it.copy(rearDefrost = false) }
-                    ClimateAction.SetSeatHeat -> _uiState.update { state ->
-                        val position = command.position ?: return@update state
-                        val level = command.level ?: return@update state
-                        state.copy(
-                            telemetry = state.telemetry.copy(
-                                seatHeatLevels = state.telemetry.seatHeatLevels + (position.wireValue to level),
-                            ),
-                        )
+                    ClimateAction.SetSeatHeat -> {
+                        _uiState.update { state ->
+                            val position = command.position ?: return@update state
+                            val level = command.level ?: return@update state
+                            state.copy(
+                                telemetry = state.telemetry.copy(
+                                    seatHeatLevels = state.telemetry.seatHeatLevels + (position.wireValue to level),
+                                ),
+                            )
+                        }
+                        persistSnapshot()
                     }
-                    ClimateAction.SetSeatVent -> _uiState.update { state ->
-                        val position = command.position ?: return@update state
-                        val level = command.level ?: return@update state
-                        state.copy(
-                            telemetry = state.telemetry.copy(
-                                seatVentLevels = state.telemetry.seatVentLevels + (position.wireValue to level),
-                            ),
-                        )
+                    ClimateAction.SetSeatVent -> {
+                        _uiState.update { state ->
+                            val position = command.position ?: return@update state
+                            val level = command.level ?: return@update state
+                            state.copy(
+                                telemetry = state.telemetry.copy(
+                                    seatVentLevels = state.telemetry.seatVentLevels + (position.wireValue to level),
+                                ),
+                            )
+                        }
+                        persistSnapshot()
                     }
                     else -> Unit
                 }
@@ -619,7 +682,8 @@ class RemoteRepository(
             command.lon?.let { lon -> "%.6f, %.6f".format(Locale.US, lat, lon) }
         }
         val title = placeName
-            ?: command.label?.toHistoryTitle(originalUrl)
+            ?.toDisplayPlaceTitle()
+            ?: command.label?.toHistoryTitle(originalUrl)?.toDisplayPlaceTitle()
             ?: command.query?.toHistoryTitle(originalUrl)?.take(80)
             ?: coordinates
             ?: "Destination"
@@ -697,6 +761,11 @@ class RemoteRepository(
             .replace(Regex("""\s+"""), " ")
             .trim()
 
+    private fun String.toDisplayPlaceTitle(): String =
+        replace(Regex("""^[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3},?\s*"""), "")
+            .trim()
+            .ifBlank { this }
+
     private fun compactUrl(url: String?): String? {
         val parsed = runCatching { Uri.parse(url) }.getOrNull() ?: return null
         val host = parsed.host?.removePrefix("www.") ?: return null
@@ -760,6 +829,29 @@ class RemoteRepository(
 
     private fun echoClimate(update: (VehicleTelemetry) -> VehicleTelemetry) {
         _uiState.update { state -> state.copy(telemetry = update(state.telemetry)) }
+        persistSnapshot()
+    }
+
+    private fun updateTelemetry(update: (VehicleTelemetry) -> VehicleTelemetry) {
+        val now = System.currentTimeMillis()
+        _uiState.update { state ->
+            state.copy(
+                telemetry = update(state.telemetry),
+                lastStatusRefreshMillis = now,
+            )
+        }
+        persistSnapshot()
+    }
+
+    private fun persistSnapshot() {
+        val state = _uiState.value
+        val timestamp = state.lastStatusRefreshMillis ?: return
+        settings.saveLastVehicleStatus(
+            VehicleStatusSnapshot(
+                telemetry = state.telemetry,
+                lastRefreshMillis = timestamp,
+            ),
+        )
     }
 
     private companion object {

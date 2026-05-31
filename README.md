@@ -46,6 +46,7 @@ For implementation details, see [docs/DISPLAYMIRROR_COMPATIBILITY.md](docs/DISPL
 
 - First-time setup with pairing-code entry, a link to DisplayMirror, and a demo mode for review/testing without a paired car.
 - Material 3 Expressive-inspired UI with responsive spring press motion, larger tactile surfaces, and a Jetour-branded header.
+- v1.4.8 adds smoother lock/unlock progress, persisted last-known vehicle status, last-refresh display, connected quick-action notification, cleaner shared-link titles, and in-app release notes.
 - v1.4.7 sends only resolved map coordinates or clean place text to DisplayMirror, prevents unsupported remote HVAC-off behavior, and keeps Arabic temperature values left-to-right.
 - v1.4.6 improves Lighting readability with vertical actions and makes Android back return to Home before exiting.
 - v1.4.5 shared-link history resend now uses the stored navigation command directly, while tapping the saved link still opens the original location on the phone.
@@ -63,6 +64,9 @@ For implementation details, see [docs/DISPLAYMIRROR_COMPATIBILITY.md](docs/DISPL
 - Side mirror fold/unfold controls when DisplayMirror accepts the command.
 - Share-to-car navigation: share Google Maps, `geo:` links, Google navigation links, coordinates, or place text to G700 Remote and the app resolves coordinates or forwards a clean destination to DisplayMirror.
 - Shared-link history with readable place names when available, original-link open back into Maps/browser, resend, delete confirmation, and clear-all confirmation.
+- Last-known status is saved on the phone after refreshes, so offline screens can still show the latest returned vehicle data while controls remain disabled until connected.
+- Optional connected notification, enabled by default, keeps a low-priority ongoing status while connected and provides quick lock/unlock and hazards actions.
+- In-app "What's new" dialog appears after updates and can be reopened from Settings in English or Arabic.
 - Settings for merged connectivity/pairing, language, theme, security gate, regional features, and diagnostics.
 - Settings app update checker using GitHub Releases, with manual check, twice-daily background checks, and a 7-day freshness gate so outdated builds stop controlling the car until the update check succeeds.
 - Local biometric/PIN gate for sensitive actions when enabled.

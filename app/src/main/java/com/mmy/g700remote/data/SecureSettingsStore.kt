@@ -169,6 +169,34 @@ class SecureSettingsStore(context: Context) : SettingsStore {
         prefs.edit().putString(KEY_NAVIGATION_HISTORY, array.toString()).apply()
     }
 
+    override fun getLastVehicleStatus(): VehicleStatusSnapshot? {
+        val raw = prefs.getString(KEY_LAST_VEHICLE_STATUS, null) ?: return null
+        return runCatching {
+            val obj = JSONObject(raw)
+            VehicleStatusSnapshot(
+                telemetry = vehicleTelemetryFromJson(obj.getJSONObject("telemetry")),
+                lastRefreshMillis = obj.optLong("lastRefreshMillis").takeIf { it > 0L } ?: return null,
+            )
+        }.getOrElse {
+            prefs.edit().remove(KEY_LAST_VEHICLE_STATUS).apply()
+            null
+        }
+    }
+
+    override fun saveLastVehicleStatus(snapshot: VehicleStatusSnapshot) {
+        val json = JSONObject()
+            .put("lastRefreshMillis", snapshot.lastRefreshMillis)
+            .put("telemetry", snapshot.telemetry.toJson())
+        prefs.edit().putString(KEY_LAST_VEHICLE_STATUS, json.toString()).apply()
+    }
+
+    override fun isConnectedNotificationEnabled(): Boolean =
+        prefs.getBoolean(KEY_CONNECTED_NOTIFICATION_ENABLED, true)
+
+    override fun setConnectedNotificationEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_CONNECTED_NOTIFICATION_ENABLED, enabled).apply()
+    }
+
     override fun areRegionalFeaturesEnabled(): Boolean =
         prefs.getBoolean(KEY_REGIONAL_FEATURES_ENABLED, false)
 
@@ -193,6 +221,13 @@ class SecureSettingsStore(context: Context) : SettingsStore {
 
     override fun setLoggingEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_LOGGING_ENABLED, enabled).apply()
+    }
+
+    override fun getLastSeenReleaseNotesVersion(): String? =
+        prefs.getString(KEY_LAST_SEEN_RELEASE_NOTES_VERSION, null)
+
+    override fun setLastSeenReleaseNotesVersion(version: String) {
+        prefs.edit().putString(KEY_LAST_SEEN_RELEASE_NOTES_VERSION, version).apply()
     }
 
     private fun putEncryptedString(key: String, value: String) {
@@ -253,10 +288,13 @@ class SecureSettingsStore(context: Context) : SettingsStore {
         private const val KEY_APP_THEME = "app_theme"
         private const val KEY_APP_COLOR_MODE = "app_color_mode"
         private const val KEY_NAVIGATION_HISTORY = "navigation_history"
+        private const val KEY_LAST_VEHICLE_STATUS = "last_vehicle_status"
+        private const val KEY_CONNECTED_NOTIFICATION_ENABLED = "connected_notification_enabled"
         private const val KEY_REGIONAL_FEATURES_ENABLED = "regional_features_enabled"
         private const val KEY_LOCAL_AUTH = "local_auth"
         private const val KEY_LOCK_MAPPING = "lock_mapping"
         private const val KEY_LOGGING_ENABLED = "logging_enabled"
+        private const val KEY_LAST_SEEN_RELEASE_NOTES_VERSION = "last_seen_release_notes_version"
         private const val MAX_NAV_HISTORY = 50
     }
 }
@@ -264,4 +302,110 @@ class SecureSettingsStore(context: Context) : SettingsStore {
 private fun JSONObject.optNullableDouble(key: String): Double? {
     if (!has(key) || isNull(key)) return null
     return optDouble(key).takeUnless { it.isNaN() }
+}
+
+private fun JSONObject.optNullableInt(key: String): Int? {
+    if (!has(key) || isNull(key)) return null
+    return optInt(key)
+}
+
+private fun JSONObject.optNullableBoolean(key: String): Boolean? {
+    if (!has(key) || isNull(key)) return null
+    return optBoolean(key)
+}
+
+private fun VehicleTelemetry.toJson(): JSONObject =
+    JSONObject()
+        .putNullable("lockState", lockState)
+        .putNullable("cabinTemp", cabinTemp)
+        .putNullable("outdoorTemp", outdoorTemp)
+        .putNullable("coolantTemp", coolantTemp)
+        .putNullable("batterySoc", batterySoc)
+        .putNullable("fuelPercent", fuelPercent)
+        .putNullable("acOn", acOn)
+        .putNullable("chargingState", chargingState)
+        .putNullable("chargeRemainTime", chargeRemainTime)
+        .putNullable("packVoltage", packVoltage)
+        .putNullable("packCurrent", packCurrent)
+        .putNullable("packPower", packPower)
+        .putNullable("chargeMode", chargeMode)
+        .putNullable("parkingChargeTargetSoc", parkingChargeTargetSoc)
+        .putNullable("parkingChargeEtaMin", parkingChargeEtaMin)
+        .putNullable("dischargeEtaMin", dischargeEtaMin)
+        .putNullable("safetySocFloor", safetySocFloor)
+        .putNullable("raceChargeActive", raceChargeActive)
+        .putNullable("raceChargeTarget", raceChargeTarget)
+        .putNullable("raceChargeEtaMin", raceChargeEtaMin)
+        .putNullable("tempLeft", tempLeft)
+        .putNullable("tempRight", tempRight)
+        .putNullable("fanSpeed", fanSpeed)
+        .putNullable("circulation", circulation)
+        .putNullable("fastCool", fastCool)
+        .putNullable("fastHeat", fastHeat)
+        .putNullable("autoDefrost", autoDefrost)
+        .putNullable("rearDefrost", rearDefrost)
+        .putNullable("parkingChargeSwitchState", parkingChargeSwitchState)
+        .putNullable("parkingChargeMode", parkingChargeMode)
+        .putNullable("hazardsOn", hazardsOn)
+        .putNullable("drlOn", drlOn)
+        .put("seatHeatLevels", seatHeatLevels.toJsonObject())
+        .put("seatVentLevels", seatVentLevels.toJsonObject())
+
+private fun vehicleTelemetryFromJson(obj: JSONObject): VehicleTelemetry =
+    VehicleTelemetry(
+        lockState = obj.optNullableInt("lockState"),
+        cabinTemp = obj.optNullableDouble("cabinTemp"),
+        outdoorTemp = obj.optNullableDouble("outdoorTemp"),
+        coolantTemp = obj.optNullableDouble("coolantTemp"),
+        batterySoc = obj.optNullableInt("batterySoc"),
+        fuelPercent = obj.optNullableInt("fuelPercent"),
+        acOn = obj.optNullableBoolean("acOn"),
+        chargingState = obj.optNullableInt("chargingState"),
+        chargeRemainTime = obj.optNullableInt("chargeRemainTime"),
+        packVoltage = obj.optNullableDouble("packVoltage"),
+        packCurrent = obj.optNullableDouble("packCurrent"),
+        packPower = obj.optNullableDouble("packPower"),
+        chargeMode = obj.optString("chargeMode").ifBlank { null },
+        parkingChargeTargetSoc = obj.optNullableInt("parkingChargeTargetSoc"),
+        parkingChargeEtaMin = obj.optNullableInt("parkingChargeEtaMin"),
+        dischargeEtaMin = obj.optNullableInt("dischargeEtaMin"),
+        safetySocFloor = obj.optNullableInt("safetySocFloor"),
+        raceChargeActive = obj.optNullableBoolean("raceChargeActive"),
+        raceChargeTarget = obj.optNullableInt("raceChargeTarget"),
+        raceChargeEtaMin = obj.optNullableInt("raceChargeEtaMin"),
+        tempLeft = obj.optNullableDouble("tempLeft"),
+        tempRight = obj.optNullableDouble("tempRight"),
+        fanSpeed = obj.optNullableInt("fanSpeed"),
+        circulation = obj.optNullableInt("circulation"),
+        fastCool = obj.optNullableBoolean("fastCool"),
+        fastHeat = obj.optNullableBoolean("fastHeat"),
+        autoDefrost = obj.optNullableBoolean("autoDefrost"),
+        rearDefrost = obj.optNullableBoolean("rearDefrost"),
+        parkingChargeSwitchState = obj.optNullableInt("parkingChargeSwitchState"),
+        parkingChargeMode = obj.optNullableInt("parkingChargeMode"),
+        hazardsOn = obj.optNullableBoolean("hazardsOn"),
+        drlOn = obj.optNullableBoolean("drlOn"),
+        seatHeatLevels = obj.optJSONObject("seatHeatLevels").toStringIntMap(),
+        seatVentLevels = obj.optJSONObject("seatVentLevels").toStringIntMap(),
+    )
+
+private fun JSONObject.putNullable(key: String, value: Any?): JSONObject {
+    if (value != null) put(key, value)
+    return this
+}
+
+private fun Map<String, Int>.toJsonObject(): JSONObject =
+    JSONObject().also { obj ->
+        forEach { (key, value) -> obj.put(key, value) }
+    }
+
+private fun JSONObject?.toStringIntMap(): Map<String, Int> {
+    val obj = this ?: return emptyMap()
+    return buildMap {
+        val keys = obj.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            put(key, obj.optInt(key))
+        }
+    }
 }

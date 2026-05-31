@@ -127,6 +127,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mmy.g700remote.R
 import com.mmy.g700remote.BuildConfig
+import com.mmy.g700remote.ConnectedCarNotificationService
 import com.mmy.g700remote.ble.ConnectionPreference
 import com.mmy.g700remote.G700RemoteViewModel
 import com.mmy.g700remote.ble.RemoteConnectionState
@@ -137,6 +138,7 @@ import com.mmy.g700remote.data.AppTheme
 import com.mmy.g700remote.data.AppUpdateInfo
 import com.mmy.g700remote.data.AppUpdateState
 import com.mmy.g700remote.data.LockStateMapping
+import com.mmy.g700remote.data.LockCommandProgress
 import com.mmy.g700remote.data.NavigationHistoryEntry
 import com.mmy.g700remote.data.NavigationShareResult
 import com.mmy.g700remote.data.PairedDevice
@@ -156,6 +158,7 @@ import com.mmy.g700remote.protocol.WindowAction
 import com.mmy.g700remote.security.LocalAuthGate
 import com.mmy.g700remote.ui.theme.G700RemoteTheme
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
@@ -196,6 +199,7 @@ fun G700RemoteApp(
     var navigationShareInProgress by remember { mutableStateOf(false) }
     var showStandaloneHistory by rememberSaveable { mutableStateOf(false) }
     var wasRecentlyConnected by remember { mutableStateOf(false) }
+    var showReleaseNotes by rememberSaveable { mutableStateOf(false) }
 
     fun showUserNotice(message: String) {
         scope.launch { snackbarHostState.showSnackbar(translate(language, message)) }
@@ -302,6 +306,15 @@ fun G700RemoteApp(
             if (navigationShareInProgress) {
                 NavigationShareProgressDialog()
             }
+            if (showReleaseNotes) {
+                ReleaseNotesDialog(
+                    initialLanguage = language,
+                    onDismiss = {
+                        showReleaseNotes = false
+                        viewModel.markReleaseNotesSeen(BuildConfig.VERSION_NAME)
+                    },
+                )
+            }
 
     LaunchedEffect(state.connectionState) {
         when (state.connectionState) {
@@ -343,6 +356,19 @@ fun G700RemoteApp(
             sendNavigationText(text)
             onSharedNavigationConsumed()
         }
+    }
+
+    LaunchedEffect(state.lastSeenReleaseNotesVersion) {
+        if (state.lastSeenReleaseNotesVersion != BuildConfig.VERSION_NAME) {
+            showReleaseNotes = true
+        }
+    }
+
+    LaunchedEffect(state.connectionState, state.connectedNotificationEnabled, demoMode) {
+        val shouldRun = !demoMode &&
+            state.connectedNotificationEnabled &&
+            state.connectionState is RemoteConnectionState.Ready
+        runCatching { ConnectedCarNotificationService.setRunning(activity, shouldRun) }
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -403,9 +429,11 @@ fun G700RemoteApp(
                 onLocalAuthChanged = viewModel::setLocalAuthEnabled,
                 onLockMappingChanged = viewModel::setLockStateMapping,
                 onLoggingChanged = viewModel::setLoggingEnabled,
+                onConnectedNotificationChanged = viewModel::setConnectedNotificationEnabled,
                 updateState = updateState,
                 onCheckForUpdates = viewModel::checkForUpdates,
                 onDownloadUpdate = { viewModel.downloadAndInstallUpdate(activity, it) },
+                onShowReleaseNotes = { showReleaseNotes = true },
                 onRefresh = { scope.launch { snackbarHostState.showSnackbar(translate(language, "Demo mode only. No command was sent to the car.")) } },
                 onShareLog = { onShareLog(viewModel.exportLogText()) },
                 onResendNavigationHistory = {
@@ -460,9 +488,11 @@ fun G700RemoteApp(
                 onLocalAuthChanged = viewModel::setLocalAuthEnabled,
                 onLockMappingChanged = viewModel::setLockStateMapping,
                 onLoggingChanged = viewModel::setLoggingEnabled,
+                onConnectedNotificationChanged = viewModel::setConnectedNotificationEnabled,
                 updateState = updateState,
                 onCheckForUpdates = viewModel::checkForUpdates,
                 onDownloadUpdate = { viewModel.downloadAndInstallUpdate(activity, it) },
+                onShowReleaseNotes = { showReleaseNotes = true },
                 onRefresh = viewModel::refreshNow,
                 onShareLog = { onShareLog(viewModel.exportLogText()) },
                 onResendNavigationHistory = ::resendNavigationHistory,
@@ -583,6 +613,66 @@ private fun NavigationShareProgressDialog() {
             }
         },
         confirmButton = {},
+    )
+}
+
+@Composable
+private fun ReleaseNotesDialog(
+    initialLanguage: AppLanguage,
+    onDismiss: () -> Unit,
+) {
+    var notesLanguage by rememberSaveable { mutableStateOf(initialLanguage) }
+    val notes = releaseNotes(notesLanguage)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(notes.title, fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    SegmentedChoice(
+                        label = "EN",
+                        selected = notesLanguage == AppLanguage.English,
+                        enabled = true,
+                        modifier = Modifier.weight(1f),
+                        onClick = { notesLanguage = AppLanguage.English },
+                    )
+                    SegmentedChoice(
+                        label = "AR",
+                        selected = notesLanguage == AppLanguage.Arabic,
+                        enabled = true,
+                        modifier = Modifier.weight(1f),
+                        onClick = { notesLanguage = AppLanguage.Arabic },
+                    )
+                }
+            }
+        },
+        text = {
+            CompositionLocalProvider(
+                LocalLayoutDirection provides if (notesLanguage == AppLanguage.Arabic) LayoutDirection.Rtl else LayoutDirection.Ltr,
+            ) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        notes.intro,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    notes.items.forEach { item ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("•", color = MaterialTheme.colorScheme.primary)
+                            Text(item, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(if (notesLanguage == AppLanguage.Arabic) "تم" else "Done")
+            }
+        },
     )
 }
 
@@ -889,9 +979,11 @@ private fun MainRemoteScaffold(
     onLocalAuthChanged: (Boolean) -> Unit,
     onLockMappingChanged: (LockStateMapping) -> Unit,
     onLoggingChanged: (Boolean) -> Unit,
+    onConnectedNotificationChanged: (Boolean) -> Unit,
     updateState: AppUpdateState,
     onCheckForUpdates: () -> Unit,
     onDownloadUpdate: (AppUpdateInfo) -> Unit,
+    onShowReleaseNotes: () -> Unit,
     onRefresh: () -> Unit,
     onShareLog: () -> Unit,
     onResendNavigationHistory: (NavigationHistoryEntry) -> Unit,
@@ -975,9 +1067,11 @@ private fun MainRemoteScaffold(
                 onLocalAuthChanged = onLocalAuthChanged,
                 onLockMappingChanged = onLockMappingChanged,
                 onLoggingChanged = onLoggingChanged,
+                onConnectedNotificationChanged = onConnectedNotificationChanged,
                 updateState = updateState,
                 onCheckForUpdates = onCheckForUpdates,
                 onDownloadUpdate = onDownloadUpdate,
+                onShowReleaseNotes = onShowReleaseNotes,
                 onShareLog = onShareLog,
                 onDisconnect = onDisconnect,
                 onDemoModeChanged = onDemoModeChanged,
@@ -1024,7 +1118,7 @@ private fun ConnectionHeader(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        state.connectionState.label(),
+                        connectionStatusLine(state),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
@@ -1312,6 +1406,7 @@ private fun HomeScreen(
     val locked = isLocked(state)
     val lockActionIsUnlock = locked == true
     val airOn = state.telemetry.fanSpeed?.let { it > 0 }
+    val lockPending = state.pendingLockCommand != null
     LazyColumn(
         modifier = modifier,
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
@@ -1348,7 +1443,8 @@ private fun HomeScreen(
                     HeroCommandButton(
                         text = if (lockActionIsUnlock) tr("Unlock") else tr("Lock"),
                         icon = if (lockActionIsUnlock) Icons.Outlined.LockOpen else Icons.Outlined.Lock,
-                        enabled = ready,
+                        enabled = ready && !lockPending,
+                        loading = lockPending,
                         danger = lockActionIsUnlock,
                         onClick = { onCommand(if (lockActionIsUnlock) RemoteCommand.Unlock else RemoteCommand.Lock) },
                     )
@@ -1937,9 +2033,11 @@ private fun SettingsScreen(
     onLocalAuthChanged: (Boolean) -> Unit,
     onLockMappingChanged: (LockStateMapping) -> Unit,
     onLoggingChanged: (Boolean) -> Unit,
+    onConnectedNotificationChanged: (Boolean) -> Unit,
     updateState: AppUpdateState,
     onCheckForUpdates: () -> Unit,
     onDownloadUpdate: (AppUpdateInfo) -> Unit,
+    onShowReleaseNotes: () -> Unit,
     onShareLog: () -> Unit,
     onDisconnect: () -> Unit,
     onDemoModeChanged: (Boolean) -> Unit,
@@ -1966,6 +2064,9 @@ private fun SettingsScreen(
                 Spacer(Modifier.height(10.dp))
                 MetricRow(tr("State"), state.connectionState.label())
                 MetricRow(tr("Active"), state.connectionState.activeTransportLabel())
+                state.lastStatusRefreshMillis?.let {
+                    MetricRow(tr("Last refresh"), formatFriendlyRefreshTime(it))
+                }
                 MetricRow(tr("Device"), state.pairedDevice?.name ?: tr("Unnamed"))
                 MetricRow(tr("Address"), state.pairedDevice?.address ?: tr("not paired"))
                 MetricRow(tr("Transport"), state.pairedDevice?.transport?.label() ?: tr("Unknown"))
@@ -2005,6 +2106,13 @@ private fun SettingsScreen(
                     checked = state.lanEnabled,
                     icon = Icons.Outlined.Wifi,
                     onCheckedChange = onLanEnabledChanged,
+                )
+                ProtocolSwitchRow(
+                    title = tr("Connected notification"),
+                    subtitle = tr("Keep a persistent notification with light status and quick actions while connected."),
+                    checked = state.connectedNotificationEnabled,
+                    icon = Icons.Outlined.DirectionsCar,
+                    onCheckedChange = onConnectedNotificationChanged,
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(tr("Priority"), fontWeight = FontWeight.Medium)
@@ -2139,6 +2247,13 @@ private fun SettingsScreen(
                     Icon(Icons.Outlined.Refresh, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text(if (updateState.isChecking) tr("Checking") else tr("Check for updates"))
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = onShowReleaseNotes,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(tr("What's new in this version"))
                 }
             }
         }
@@ -2695,6 +2810,7 @@ private fun HeroCommandButton(
     text: String,
     icon: ImageVector,
     enabled: Boolean,
+    loading: Boolean = false,
     danger: Boolean = false,
     onClick: () -> Unit,
 ) {
@@ -2731,9 +2847,17 @@ private fun HeroCommandButton(
     ) {
         Box(contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(icon, contentDescription = null, modifier = Modifier.size(42.dp))
-                Spacer(Modifier.height(10.dp))
-                Text(text, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                if (loading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(42.dp),
+                        color = if (danger) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 3.dp,
+                    )
+                } else {
+                    Icon(icon, contentDescription = null, modifier = Modifier.size(42.dp))
+                    Spacer(Modifier.height(10.dp))
+                    Text(text, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                }
             }
         }
     }
@@ -3270,6 +3394,11 @@ private fun RemoteConnectionState.label(): String = when (this) {
 private fun RemoteConnectionState.activeTransportLabel(): String =
     if (this is RemoteConnectionState.Ready) transport.label() else tr("None")
 
+@Composable
+private fun connectionStatusLine(state: RemoteUiState): String =
+    state.lastStatusRefreshMillis?.let { "${state.connectionState.label()} • ${formatFriendlyRefreshTime(it)}" }
+        ?: state.connectionState.label()
+
 private fun RemoteConnectionState.readyTransportIcon(): ImageVector =
     if (this is RemoteConnectionState.Ready && transport == TransportKind.Lan) Icons.Outlined.Wifi else Icons.Outlined.Bluetooth
 
@@ -3289,6 +3418,11 @@ private fun AppTheme.label(): String = when (this) {
 
 @Composable
 private fun lockLabel(state: RemoteUiState): String {
+    when (state.pendingLockCommand) {
+        LockCommandProgress.Locking -> return tr("Locking...")
+        LockCommandProgress.Unlocking -> return tr("Unlocking...")
+        null -> Unit
+    }
     val raw = state.telemetry.lockState ?: return tr("Lock state Unknown")
     return if (raw == 1) tr("Locked") else tr("Unlocked")
 }
@@ -3313,6 +3447,21 @@ private fun formatTemp(value: Double): String = "%.1f °C".format(value)
 
 private fun formatTimeAgo(value: Long): String =
     SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(value))
+
+@Composable
+private fun formatFriendlyRefreshTime(value: Long): String {
+    val now = Calendar.getInstance()
+    val date = Calendar.getInstance().apply { timeInMillis = value }
+    val time = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(value))
+    return if (
+        now.get(Calendar.YEAR) == date.get(Calendar.YEAR) &&
+        now.get(Calendar.DAY_OF_YEAR) == date.get(Calendar.DAY_OF_YEAR)
+    ) {
+        "${tr("Today")}, $time"
+    } else {
+        SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(value))
+    }
+}
 
 private fun formatChargeMode(value: String?): String? =
     value?.uppercase()?.replace('_', ' ')
@@ -3420,6 +3569,41 @@ private fun applyDemoCommand(telemetry: VehicleTelemetry, command: RemoteCommand
         else -> telemetry
     }
 
+private data class ReleaseNotesCopy(
+    val title: String,
+    val intro: String,
+    val items: List<String>,
+)
+
+private fun releaseNotes(language: AppLanguage): ReleaseNotesCopy =
+    if (language == AppLanguage.Arabic) {
+        ReleaseNotesCopy(
+            title = "ما الجديد في الإصدار ${BuildConfig.VERSION_NAME}",
+            intro = "تحسينات هذا الإصدار تركز على جعل التطبيق أوضح عند الاتصال، وأسهل للاستخدام اليومي.",
+            items = listOf(
+                "عند القفل أو الفتح يظهر انتظار واضح لمدة قصيرة قبل تحديث حالة السيارة، حتى لا تتغير الحالة بشكل مفاجئ.",
+                "يتم حفظ آخر حالة معروفة للسيارة محلياً، ويمكنك رؤيتها لاحقاً حتى إذا لم تكن السيارة متصلة.",
+                "إضافة آخر وقت تحديث بجانب حالة الاتصال في أعلى التطبيق.",
+                "إشعار مستمر عند الاتصال يعرض البطارية والوقود مع أزرار سريعة للقفل أو الفتح والتحذير.",
+                "تحسين سجل الروابط ليعرض اسم الموقع بشكل أنظف بدون تكرار كود الموقع.",
+                "يمكن قراءة هذه الرسالة مرة أخرى من الإعدادات.",
+            ),
+        )
+    } else {
+        ReleaseNotesCopy(
+            title = "What's new in ${BuildConfig.VERSION_NAME}",
+            intro = "This update focuses on clearer connection state and smoother daily use.",
+            items = listOf(
+                "Lock and unlock now show a short in-progress state before the refreshed car status appears.",
+                "The app saves the last known vehicle status locally so you can still view it while offline.",
+                "The header now shows the last refresh time beside the connection state.",
+                "A connected notification shows battery, fuel, and quick Lock/Unlock and Hazards actions.",
+                "Shared-link history is cleaner and avoids repeating location plus codes in the title.",
+                "You can reopen these release notes from Settings.",
+            ),
+        )
+    }
+
 private val ArabicTranslations = mapOf(
     "Confirm" to "تأكيد",
     "Use biometrics or device PIN to continue." to "استخدم البصمة أو رمز الهاتف للمتابعة.",
@@ -3476,6 +3660,8 @@ private val ArabicTranslations = mapOf(
     "Lights" to "الإضاءة",
     "Lock" to "قفل",
     "Unlock" to "فتح القفل",
+    "Locking..." to "جار القفل...",
+    "Unlocking..." to "جار الفتح...",
     "Locked" to "مقفلة",
     "Unlocked" to "مفتوحة",
     "Lock state Unknown" to "حالة القفل غير معروفة",
@@ -3591,6 +3777,10 @@ private val ArabicTranslations = mapOf(
     "LAN only" to "الشبكة فقط",
     "Active" to "النشط",
     "State" to "الحالة",
+    "Last refresh" to "آخر تحديث",
+    "Today" to "اليوم",
+    "Connected notification" to "إشعار الاتصال",
+    "Keep a persistent notification with light status and quick actions while connected." to "يعرض إشعاراً مستمراً عند الاتصال مع حالة مختصرة وأزرار سريعة.",
     "Security" to "الأمان",
     "Additional regional features" to "ميزات إقليمية إضافية",
     "Show unavailable regional features" to "إظهار الميزات غير المتوفرة محلياً",
@@ -3623,6 +3813,7 @@ private val ArabicTranslations = mapOf(
     "Downloading" to "جار التنزيل",
     "Check for updates" to "التحقق من التحديثات",
     "Checking" to "جار التحقق",
+    "What's new in this version" to "ما الجديد في هذا الإصدار",
     "Checks GitHub releases for signed APK updates twice daily." to "يفحص إصدارات GitHub مرتين يومياً لتحديثات APK الموقعة.",
     "Links" to "الروابط",
     "Locations shared to the car can be resent from here." to "يمكن إعادة إرسال المواقع التي تمت مشاركتها مع السيارة من هنا.",

@@ -5,45 +5,21 @@ import android.app.Activity
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.mmy.g700remote.ble.ConnectionPreference
-import com.mmy.g700remote.ble.DisplayMirrorBleClient
 import com.mmy.g700remote.data.LockStateMapping
 import com.mmy.g700remote.data.AppLanguage
 import com.mmy.g700remote.data.AppColorMode
 import com.mmy.g700remote.data.AppTheme
-import com.mmy.g700remote.data.CompositeDisplayMirrorTransport
-import com.mmy.g700remote.data.RemoteRepository
 import com.mmy.g700remote.data.RemoteUiState
-import com.mmy.g700remote.data.SecureSettingsStore
 import com.mmy.g700remote.data.AppUpdateInfo
 import com.mmy.g700remote.data.AppUpdateState
 import com.mmy.g700remote.data.NavigationShareResult
-import com.mmy.g700remote.network.DisplayMirrorLanClient
 import com.mmy.g700remote.protocol.RemoteCommand
-import com.mmy.g700remote.update.AppUpdateManager
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 class G700RemoteViewModel(application: Application) : AndroidViewModel(application) {
-    private val settings = SecureSettingsStore(application.applicationContext)
-    private val updateManager = AppUpdateManager(application.applicationContext)
-    private val repository = RemoteRepository(
-        transport = CompositeDisplayMirrorTransport(
-            ble = DisplayMirrorBleClient(
-                application.applicationContext,
-                viewModelScope,
-                pairingCodeProvider = { settings.getPairingCode() },
-            ),
-            lan = DisplayMirrorLanClient(
-                application.applicationContext,
-                viewModelScope,
-                pairingCodeProvider = { settings.getPairingCode() },
-            ),
-            settings = settings,
-            scope = viewModelScope,
-        ),
-        settings = settings,
-        scope = viewModelScope,
-    )
+    private val updateManager = G700RemoteAppGraph.updateManager(application.applicationContext)
+    private val repository = G700RemoteAppGraph.repository(application.applicationContext)
 
     val uiState: StateFlow<RemoteUiState> = repository.uiState
     val updateState: StateFlow<AppUpdateState> = updateManager.state
@@ -75,6 +51,8 @@ class G700RemoteViewModel(application: Application) : AndroidViewModel(applicati
     fun setLocalAuthEnabled(enabled: Boolean) = repository.setLocalAuthEnabled(enabled)
     fun setLockStateMapping(mapping: LockStateMapping) = repository.setLockStateMapping(mapping)
     fun setLoggingEnabled(enabled: Boolean) = repository.setLoggingEnabled(enabled)
+    fun setConnectedNotificationEnabled(enabled: Boolean) = repository.setConnectedNotificationEnabled(enabled)
+    fun markReleaseNotesSeen(version: String) = repository.markReleaseNotesSeen(version)
     fun refreshNow() = repository.refreshNow()
     fun sendSharedNavigation(text: String, onResult: (NavigationShareResult) -> Unit = {}) =
         repository.sendSharedNavigation(text, onResult)
@@ -92,9 +70,6 @@ class G700RemoteViewModel(application: Application) : AndroidViewModel(applicati
     fun exportLogText(): String = repository.exportLogText()
 
     override fun onCleared() {
-        viewModelScope.launch {
-            repository.disconnect()
-        }
         super.onCleared()
     }
 }
