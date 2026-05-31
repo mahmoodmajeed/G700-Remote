@@ -93,6 +93,16 @@ class RemoteProtocolCodecTest {
         assertEquals(26.2285, coords?.lat ?: 0.0, 0.0)
         assertEquals(50.5860, coords?.lon ?: 0.0, 0.0)
 
+        val sharedText = NavigationShareParser.parse(
+            "Bahrain Bay\nhttps://www.google.com/maps/place/Bahrain+Bay/@26.2491,50.5864,17z/data=!3m1!4b1!4m6!3d26.2491!4d50.5864",
+        )
+        assertEquals(26.2491, sharedText?.lat ?: 0.0, 0.0)
+        assertEquals(50.5864, sharedText?.lon ?: 0.0, 0.0)
+
+        val dataCoords = NavigationShareParser.parse("https://www.google.com/maps?ftid=0x0:0x0&entry=gps&lucs=,47075915&g_ep=CAESCTExLjEyLjYwMRgAINeCAyoAQgJCSg&g_st=ic&data=!3d26.2285!4d50.5860")
+        assertEquals(26.2285, dataCoords?.lat ?: 0.0, 0.0)
+        assertEquals(50.5860, dataCoords?.lon ?: 0.0, 0.0)
+
         val query = NavigationShareParser.parse("Bahrain International Circuit")
         assertEquals("Bahrain International Circuit", query?.query)
     }

@@ -18,6 +18,10 @@ interface SettingsStore {
     fun setAppLanguage(language: AppLanguage)
     fun getAppTheme(): AppTheme
     fun setAppTheme(theme: AppTheme)
+    fun getAppColorMode(): AppColorMode
+    fun setAppColorMode(mode: AppColorMode)
+    fun getNavigationHistory(): List<NavigationHistoryEntry>
+    fun saveNavigationHistory(history: List<NavigationHistoryEntry>)
     fun areRegionalFeaturesEnabled(): Boolean
     fun setRegionalFeaturesEnabled(enabled: Boolean)
     fun isLocalAuthEnabled(): Boolean

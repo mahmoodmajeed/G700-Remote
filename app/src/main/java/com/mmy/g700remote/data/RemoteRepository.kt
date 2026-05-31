@@ -13,10 +13,13 @@ import com.mmy.g700remote.protocol.OnOffAction
 import com.mmy.g700remote.protocol.ParkingChargeAction
 import com.mmy.g700remote.protocol.RaceChargeAction
 import kotlinx.coroutines.flow.first
+import java.net.HttpURLConnection
+import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class RemoteRepository(
     private val transport: DisplayMirrorTransport,
@@ -39,10 +43,12 @@ class RemoteRepository(
             connectionPreference = settings.getConnectionPreference(),
             appLanguage = settings.getAppLanguage(),
             appTheme = settings.getAppTheme(),
+            appColorMode = settings.getAppColorMode(),
             regionalFeaturesEnabled = settings.areRegionalFeaturesEnabled(),
             localAuthEnabled = settings.isLocalAuthEnabled(),
             lockStateMapping = LockStateMapping.State1Locked,
             loggingEnabled = settings.isLoggingEnabled(),
+            navigationHistory = settings.getNavigationHistory(),
         ),
     )
     val uiState: StateFlow<RemoteUiState> = _uiState.asStateFlow()
@@ -198,6 +204,11 @@ class RemoteRepository(
         _uiState.update { it.copy(appTheme = theme) }
     }
 
+    fun setAppColorMode(mode: AppColorMode) {
+        settings.setAppColorMode(mode)
+        _uiState.update { it.copy(appColorMode = mode) }
+    }
+
     fun setRegionalFeaturesEnabled(enabled: Boolean) {
         settings.setRegionalFeaturesEnabled(enabled)
         _uiState.update { it.copy(regionalFeaturesEnabled = enabled) }
@@ -228,12 +239,14 @@ class RemoteRepository(
     }
 
     fun sendSharedNavigation(text: String) {
-        val command = NavigationShareParser.parse(text)
-        if (command == null) {
-            _uiState.update { it.copy(lastError = "No destination found in shared text") }
-            return
-        }
         scope.launch {
+            val expandedText = resolveSharedNavigationText(text)
+            val command = NavigationShareParser.parse(expandedText) ?: NavigationShareParser.parse(text)
+            if (command == null) {
+                _uiState.update { it.copy(lastError = "No destination found in shared text") }
+                return@launch
+            }
+            addNavigationHistory(text, command)
             if (_uiState.value.connectionState !is RemoteConnectionState.Ready) {
                 connectSaved()
                 runCatching {
@@ -244,6 +257,17 @@ class RemoteRepository(
             }
             sendImmediate(command)
         }
+    }
+
+    fun deleteNavigationHistory(id: Long) {
+        val updated = _uiState.value.navigationHistory.filterNot { it.id == id }
+        settings.saveNavigationHistory(updated)
+        _uiState.update { it.copy(navigationHistory = updated) }
+    }
+
+    fun clearNavigationHistory() {
+        settings.saveNavigationHistory(emptyList())
+        _uiState.update { it.copy(navigationHistory = emptyList()) }
     }
 
     fun send(command: RemoteCommand) {
@@ -427,7 +451,7 @@ class RemoteRepository(
             }
 
             RemoteCommand.Unlock -> _uiState.update { state ->
-                state.copy(telemetry = state.telemetry.copy(lockState = 0))
+                state.copy(telemetry = state.telemetry.copy(lockState = 2))
             }
 
             is RemoteCommand.Hazards -> _uiState.update { state ->
@@ -495,7 +519,68 @@ class RemoteRepository(
         }
     }
 
+    private fun addNavigationHistory(originalText: String, command: RemoteCommand.Navigate) {
+        val now = System.currentTimeMillis()
+        val title = command.label?.takeIf { it.isNotBlank() }
+            ?: command.query?.takeIf { it.isNotBlank() }?.take(80)
+            ?: command.lat?.let { lat -> command.lon?.let { lon -> "%.5f, %.5f".format(lat, lon) } }
+            ?: "Destination"
+        val detail = when {
+            command.lat != null && command.lon != null -> "%.6f, %.6f".format(command.lat, command.lon)
+            !command.query.isNullOrBlank() -> command.query.take(140)
+            else -> originalText.take(140)
+        }
+        val entry = NavigationHistoryEntry(
+            id = now,
+            title = title,
+            detail = detail,
+            originalText = originalText,
+            sentAtMillis = now,
+        )
+        val updated = (listOf(entry) + _uiState.value.navigationHistory.filterNot {
+            it.originalText == originalText || it.detail == detail
+        }).take(MAX_NAV_HISTORY)
+        settings.saveNavigationHistory(updated)
+        _uiState.update { it.copy(navigationHistory = updated) }
+    }
+
+    private suspend fun resolveSharedNavigationText(text: String): String =
+        withContext(Dispatchers.IO) {
+            val url = NavigationShareParser.firstUrl(text) ?: return@withContext text
+            if (!NavigationShareParser.isGoogleMapsUrl(url)) return@withContext text
+            runCatching { followRedirects(url) }.getOrDefault(text)
+        }
+
+    private fun followRedirects(url: String): String {
+        var current = url
+        repeat(6) {
+            val connection = (URL(current).openConnection() as HttpURLConnection).apply {
+                instanceFollowRedirects = false
+                requestMethod = "GET"
+                connectTimeout = 7_000
+                readTimeout = 7_000
+                setRequestProperty("User-Agent", "G700-Remote")
+            }
+            try {
+                val code = connection.responseCode
+                if (code in 300..399) {
+                    val location = connection.getHeaderField("Location") ?: return current
+                    current = URL(URL(current), location).toString()
+                } else {
+                    return connection.url.toString()
+                }
+            } finally {
+                connection.disconnect()
+            }
+        }
+        return current
+    }
+
     private fun echoClimate(update: (VehicleTelemetry) -> VehicleTelemetry) {
         _uiState.update { state -> state.copy(telemetry = update(state.telemetry)) }
+    }
+
+    private companion object {
+        const val MAX_NAV_HISTORY = 50
     }
 }

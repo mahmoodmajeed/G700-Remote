@@ -48,7 +48,9 @@ class RemoteRepositoryTest {
         private var lanEnabled = true
         private var preference = ConnectionPreference.BleFirst
         private var language = AppLanguage.English
-        private var theme = AppTheme.Minimal
+        private var theme = AppTheme.G700Horizon
+        private var colorMode = AppColorMode.Dark
+        private var history = emptyList<NavigationHistoryEntry>()
         private var regionalFeatures = false
 
         override fun getPairedDevice(): PairedDevice? = paired
@@ -88,6 +90,18 @@ class RemoteRepositoryTest {
         override fun getAppTheme(): AppTheme = theme
         override fun setAppTheme(theme: AppTheme) {
             this.theme = theme
+        }
+
+        override fun getAppColorMode(): AppColorMode = colorMode
+
+        override fun setAppColorMode(mode: AppColorMode) {
+            colorMode = mode
+        }
+
+        override fun getNavigationHistory(): List<NavigationHistoryEntry> = history
+
+        override fun saveNavigationHistory(history: List<NavigationHistoryEntry>) {
+            this.history = history
         }
 
         override fun areRegionalFeaturesEnabled(): Boolean = regionalFeatures

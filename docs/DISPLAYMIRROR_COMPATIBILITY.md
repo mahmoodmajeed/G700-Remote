@@ -1,6 +1,6 @@
 # DisplayMirror Compatibility
 
-This document records the compatibility assumptions used for the v1.4 release. It is a source summary, not a replacement for re-checking future DisplayMirror APK releases.
+This document records the compatibility assumptions used for the v1.4.1 release. It is a source summary, not a replacement for re-checking future DisplayMirror APK releases.
 
 ## Head Unit Requirement
 
@@ -89,6 +89,14 @@ DisplayMirror has internal vehicle fields beyond this list, but the app only exp
 - `mirror`: sends `fold` and `unfold` actions.
 - Foreground refresh sends `status`, `climate status`, `parking_charge status`, and `race_charge status` every 3 seconds while connected.
 
+## v1.4.1 Notes
+
+- Google Maps shares may arrive as long URLs, short `maps.app.goo.gl` URLs, `/@lat,lon` paths, or embedded `!3d...!4d...` data. The phone app resolves redirects and extracts coordinates before sending `navigate`, so the head unit receives a clean location instead of a raw Google URL.
+- Shared destinations are stored locally for resend/delete history. The history is phone-local and not synced.
+- DisplayMirror protocol v4 exposes `climate` `ac_on` and `ac_off`, but the reviewed source maps that to the A/C compressor state. The phone app therefore treats cabin air on/off as fan speed control (`0` for off, a low fan speed for on) and keeps compressor control separate.
+- No remote Auto climate command was found in the reviewed DisplayMirror protocol. Auto mode is not exposed by the phone app.
+- Auto defrost is hidden because the returned state was not reliable enough for end-user control.
+
 ## Intentionally Excluded
 
 The inspected DisplayMirror source did not provide a reliable remote surface for:
@@ -100,6 +108,8 @@ The inspected DisplayMirror source did not provide a reliable remote surface for
 - gear
 - steering angle
 - live hazards, DRL, or mirror status in the general status payload
+- full HVAC power command separate from fan speed
+- Auto climate mode command
 - park keep-alive / head-unit awake controls
 
 Do not expose UI for these fields unless a future DisplayMirror release clearly sends them over the remote protocol.

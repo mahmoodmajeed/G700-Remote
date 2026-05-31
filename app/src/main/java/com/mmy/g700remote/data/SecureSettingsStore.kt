@@ -13,6 +13,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import com.mmy.g700remote.ble.ConnectionPreference
 import com.mmy.g700remote.ble.TransportKind
+import org.json.JSONArray
 import org.json.JSONObject
 
 class SecureSettingsStore(context: Context) : SettingsStore {
@@ -97,13 +98,64 @@ class SecureSettingsStore(context: Context) : SettingsStore {
     override fun getAppTheme(): AppTheme =
         runCatching {
             AppTheme.valueOf(
-                prefs.getString(KEY_APP_THEME, AppTheme.Minimal.name)
-                    ?: AppTheme.Minimal.name,
+                prefs.getString(KEY_APP_THEME, AppTheme.G700Horizon.name)
+                    ?: AppTheme.G700Horizon.name,
             )
-        }.getOrDefault(AppTheme.Minimal)
+        }.getOrDefault(AppTheme.G700Horizon)
 
     override fun setAppTheme(theme: AppTheme) {
         prefs.edit().putString(KEY_APP_THEME, theme.name).apply()
+    }
+
+    override fun getAppColorMode(): AppColorMode =
+        runCatching {
+            AppColorMode.valueOf(
+                prefs.getString(KEY_APP_COLOR_MODE, AppColorMode.Dark.name)
+                    ?: AppColorMode.Dark.name,
+            )
+        }.getOrDefault(AppColorMode.Dark)
+
+    override fun setAppColorMode(mode: AppColorMode) {
+        prefs.edit().putString(KEY_APP_COLOR_MODE, mode.name).apply()
+    }
+
+    override fun getNavigationHistory(): List<NavigationHistoryEntry> {
+        val raw = prefs.getString(KEY_NAVIGATION_HISTORY, null) ?: return emptyList()
+        return runCatching {
+            val array = JSONArray(raw)
+            buildList {
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
+                    add(
+                        NavigationHistoryEntry(
+                            id = item.optLong("id"),
+                            title = item.optString("title").ifBlank { "Destination" },
+                            detail = item.optString("detail"),
+                            originalText = item.optString("originalText"),
+                            sentAtMillis = item.optLong("sentAtMillis"),
+                        ),
+                    )
+                }
+            }
+        }.getOrElse {
+            prefs.edit().remove(KEY_NAVIGATION_HISTORY).apply()
+            emptyList()
+        }
+    }
+
+    override fun saveNavigationHistory(history: List<NavigationHistoryEntry>) {
+        val array = JSONArray()
+        history.take(MAX_NAV_HISTORY).forEach { entry ->
+            array.put(
+                JSONObject()
+                    .put("id", entry.id)
+                    .put("title", entry.title)
+                    .put("detail", entry.detail)
+                    .put("originalText", entry.originalText)
+                    .put("sentAtMillis", entry.sentAtMillis),
+            )
+        }
+        prefs.edit().putString(KEY_NAVIGATION_HISTORY, array.toString()).apply()
     }
 
     override fun areRegionalFeaturesEnabled(): Boolean =
@@ -188,9 +240,12 @@ class SecureSettingsStore(context: Context) : SettingsStore {
         private const val KEY_CONNECTION_PREFERENCE = "connection_preference"
         private const val KEY_APP_LANGUAGE = "app_language"
         private const val KEY_APP_THEME = "app_theme"
+        private const val KEY_APP_COLOR_MODE = "app_color_mode"
+        private const val KEY_NAVIGATION_HISTORY = "navigation_history"
         private const val KEY_REGIONAL_FEATURES_ENABLED = "regional_features_enabled"
         private const val KEY_LOCAL_AUTH = "local_auth"
         private const val KEY_LOCK_MAPPING = "lock_mapping"
         private const val KEY_LOGGING_ENABLED = "logging_enabled"
+        private const val MAX_NAV_HISTORY = 50
     }
 }

@@ -73,8 +73,12 @@ data class AppUpdateState(
     val downloadProgress: Int? = null,
     val availableUpdate: AppUpdateInfo? = null,
     val lastCheckedMillis: Long? = null,
+    val gateReason: UpdateGateReason = UpdateGateReason.None,
     val message: String? = null,
-)
+) {
+    val isUseBlocked: Boolean
+        get() = gateReason != UpdateGateReason.None
+}
 
 data class ProtocolLogEntry(
     val timeMillis: Long,
@@ -94,9 +98,30 @@ enum class AppLanguage {
 }
 
 enum class AppTheme {
-    Minimal,
     G700Horizon,
+    HimalayaSlate,
+    NomadStone,
     ModernPastel,
+    Minimal,
+}
+
+enum class AppColorMode {
+    Dark,
+    Light,
+}
+
+data class NavigationHistoryEntry(
+    val id: Long,
+    val title: String,
+    val detail: String,
+    val originalText: String,
+    val sentAtMillis: Long,
+)
+
+enum class UpdateGateReason {
+    None,
+    StaleCheck,
+    UpdateAvailable,
 }
 
 data class RemoteUiState(
@@ -110,13 +135,16 @@ data class RemoteUiState(
     val lanEnabled: Boolean = true,
     val connectionPreference: ConnectionPreference = ConnectionPreference.BleFirst,
     val appLanguage: AppLanguage = AppLanguage.English,
-    val appTheme: AppTheme = AppTheme.Minimal,
+    val appTheme: AppTheme = AppTheme.G700Horizon,
+    val appColorMode: AppColorMode = AppColorMode.Dark,
     val regionalFeaturesEnabled: Boolean = false,
     val localAuthEnabled: Boolean = true,
     val lockStateMapping: LockStateMapping = LockStateMapping.State1Locked,
     val loggingEnabled: Boolean = false,
     val protocolLog: List<ProtocolLogEntry> = emptyList(),
     val carLocation: CarLocation? = null,
+    val navigationHistory: List<NavigationHistoryEntry> = emptyList(),
+    val demoMode: Boolean = false,
     val lastNavigationStatus: String? = null,
     val lastError: String? = null,
 )

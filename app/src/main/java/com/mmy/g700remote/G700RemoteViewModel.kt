@@ -8,6 +8,7 @@ import com.mmy.g700remote.ble.ConnectionPreference
 import com.mmy.g700remote.ble.DisplayMirrorBleClient
 import com.mmy.g700remote.data.LockStateMapping
 import com.mmy.g700remote.data.AppLanguage
+import com.mmy.g700remote.data.AppColorMode
 import com.mmy.g700remote.data.AppTheme
 import com.mmy.g700remote.data.CompositeDisplayMirrorTransport
 import com.mmy.g700remote.data.RemoteRepository
@@ -47,6 +48,9 @@ class G700RemoteViewModel(application: Application) : AndroidViewModel(applicati
     val updateState: StateFlow<AppUpdateState> = updateManager.state
 
     init {
+        viewModelScope.launch {
+            updateManager.checkIfDue()
+        }
         if (uiState.value.pairedDevice != null) {
             repository.connectSaved()
         }
@@ -65,12 +69,15 @@ class G700RemoteViewModel(application: Application) : AndroidViewModel(applicati
     fun setConnectionPreference(preference: ConnectionPreference) = repository.setConnectionPreference(preference)
     fun setAppLanguage(language: AppLanguage) = repository.setAppLanguage(language)
     fun setAppTheme(theme: AppTheme) = repository.setAppTheme(theme)
+    fun setAppColorMode(mode: AppColorMode) = repository.setAppColorMode(mode)
     fun setRegionalFeaturesEnabled(enabled: Boolean) = repository.setRegionalFeaturesEnabled(enabled)
     fun setLocalAuthEnabled(enabled: Boolean) = repository.setLocalAuthEnabled(enabled)
     fun setLockStateMapping(mapping: LockStateMapping) = repository.setLockStateMapping(mapping)
     fun setLoggingEnabled(enabled: Boolean) = repository.setLoggingEnabled(enabled)
     fun refreshNow() = repository.refreshNow()
     fun sendSharedNavigation(text: String) = repository.sendSharedNavigation(text)
+    fun deleteNavigationHistory(id: Long) = repository.deleteNavigationHistory(id)
+    fun clearNavigationHistory() = repository.clearNavigationHistory()
     fun checkForUpdates() = viewModelScope.launch { updateManager.checkNow() }
     fun clearUpdateMessage() = updateManager.clearMessage()
     fun downloadAndInstallUpdate(activity: Activity, info: AppUpdateInfo) = viewModelScope.launch {

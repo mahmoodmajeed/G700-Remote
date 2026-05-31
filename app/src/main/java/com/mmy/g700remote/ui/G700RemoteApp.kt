@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,16 +37,23 @@ import androidx.compose.material.icons.outlined.Air
 import androidx.compose.material.icons.outlined.Bluetooth
 import androidx.compose.material.icons.outlined.BluetoothSearching
 import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.DirectionsCar
 import androidx.compose.material.icons.outlined.ElectricBolt
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Lightbulb
+import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.LocalGasStation
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.PowerSettingsNew
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Send
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Thermostat
@@ -115,12 +123,16 @@ import com.mmy.g700remote.ble.ConnectionPreference
 import com.mmy.g700remote.G700RemoteViewModel
 import com.mmy.g700remote.ble.RemoteConnectionState
 import com.mmy.g700remote.ble.TransportKind
+import com.mmy.g700remote.data.AppColorMode
 import com.mmy.g700remote.data.AppLanguage
 import com.mmy.g700remote.data.AppTheme
 import com.mmy.g700remote.data.AppUpdateInfo
 import com.mmy.g700remote.data.AppUpdateState
 import com.mmy.g700remote.data.LockStateMapping
+import com.mmy.g700remote.data.NavigationHistoryEntry
+import com.mmy.g700remote.data.PairedDevice
 import com.mmy.g700remote.data.RemoteUiState
+import com.mmy.g700remote.data.UpdateGateReason
 import com.mmy.g700remote.data.VehicleTelemetry
 import com.mmy.g700remote.protocol.ClimateAction
 import com.mmy.g700remote.protocol.MirrorAction
@@ -166,8 +178,15 @@ fun G700RemoteApp(
     val scope = rememberCoroutineScope()
     val authGate = remember { LocalAuthGate() }
     var pendingConfirmation by remember { mutableStateOf<RemoteCommand?>(null) }
+    var demoMode by rememberSaveable { mutableStateOf(false) }
+    var demoTelemetry by remember { mutableStateOf(demoTelemetry()) }
 
     fun submit(command: RemoteCommand) {
+        if (demoMode) {
+            demoTelemetry = applyDemoCommand(demoTelemetry, command)
+            scope.launch { snackbarHostState.showSnackbar(translate(language, "Demo mode only. No command was sent to the car.")) }
+            return
+        }
         if (!command.sensitive) {
             viewModel.send(command)
             return
@@ -185,7 +204,18 @@ fun G700RemoteApp(
         }
     }
 
-    G700RemoteTheme(appTheme = state.appTheme) {
+    val displayedState = if (demoMode) {
+        state.copy(
+            connectionState = RemoteConnectionState.Ready(TransportKind.Ble),
+            pairedDevice = PairedDevice("Demo G700", "DEMO", TransportKind.Ble),
+            telemetry = demoTelemetry,
+            demoMode = true,
+        )
+    } else {
+        state
+    }
+
+    G700RemoteTheme(appTheme = state.appTheme, colorMode = state.appColorMode) {
         CompositionLocalProvider(
             LocalAppLanguage provides language,
             LocalLayoutDirection provides if (language == AppLanguage.Arabic) LayoutDirection.Rtl else LayoutDirection.Ltr,
@@ -250,22 +280,64 @@ fun G700RemoteApp(
         snackbarHost = {
             SnackbarHost(
                 hostState = snackbarHostState,
-                modifier = Modifier.padding(bottom = if (state.pairedDevice != null) 92.dp else 0.dp),
+                modifier = Modifier.padding(bottom = if (displayedState.pairedDevice != null) 108.dp else 0.dp),
             )
         },
     ) { padding ->
-        if (!permissionsGranted) {
-            PermissionScreen(
-                onRequestPermissions = onRequestPermissions,
+        if (updateState.isUseBlocked) {
+            UpdateGateScreen(
+                updateState = updateState,
+                onCheckForUpdates = viewModel::checkForUpdates,
+                onDownloadUpdate = { viewModel.downloadAndInstallUpdate(activity, it) },
                 modifier = Modifier.padding(padding),
+            )
+        } else if (demoMode) {
+            MainRemoteScaffold(
+                state = displayedState,
+                onCommand = ::submit,
+                onReconnect = {},
+                onDisconnect = { demoMode = false },
+                onStartScan = viewModel::startScan,
+                onPair = viewModel::pairAndConnect,
+                onClearPairing = viewModel::clearPairing,
+                onPairingCodeChanged = viewModel::setPairingCode,
+                onBleEnabledChanged = viewModel::setBleEnabled,
+                onLanEnabledChanged = viewModel::setLanEnabled,
+                onConnectionPreferenceChanged = viewModel::setConnectionPreference,
+                onAppLanguageChanged = viewModel::setAppLanguage,
+                onAppThemeChanged = viewModel::setAppTheme,
+                onAppColorModeChanged = viewModel::setAppColorMode,
+                onRegionalFeaturesChanged = viewModel::setRegionalFeaturesEnabled,
+                onLocalAuthChanged = viewModel::setLocalAuthEnabled,
+                onLockMappingChanged = viewModel::setLockStateMapping,
+                onLoggingChanged = viewModel::setLoggingEnabled,
+                updateState = updateState,
+                onCheckForUpdates = viewModel::checkForUpdates,
+                onDownloadUpdate = { viewModel.downloadAndInstallUpdate(activity, it) },
+                onRefresh = { scope.launch { snackbarHostState.showSnackbar(translate(language, "Demo mode only. No command was sent to the car.")) } },
+                onShareLog = { onShareLog(viewModel.exportLogText()) },
+                onSendNavigationText = viewModel::sendSharedNavigation,
+                onDeleteNavigationHistory = viewModel::deleteNavigationHistory,
+                onClearNavigationHistory = viewModel::clearNavigationHistory,
+                showUpdates = showUpdates,
+                onUpdatesShown = onUpdatesShown,
+                contentPadding = padding,
             )
         } else if (state.pairedDevice == null) {
             PairingScreen(
                 state = state,
+                permissionsGranted = permissionsGranted,
                 onStartScan = viewModel::startScan,
                 onStopScan = viewModel::stopScan,
                 onPair = viewModel::pairAndConnect,
                 onPairingCodeChanged = viewModel::setPairingCode,
+                onRequestPermissions = onRequestPermissions,
+                onStartDemo = { demoMode = true },
+                modifier = Modifier.padding(padding),
+            )
+        } else if (!permissionsGranted) {
+            PermissionScreen(
+                onRequestPermissions = onRequestPermissions,
                 modifier = Modifier.padding(padding),
             )
         } else {
@@ -283,6 +355,7 @@ fun G700RemoteApp(
                 onConnectionPreferenceChanged = viewModel::setConnectionPreference,
                 onAppLanguageChanged = viewModel::setAppLanguage,
                 onAppThemeChanged = viewModel::setAppTheme,
+                onAppColorModeChanged = viewModel::setAppColorMode,
                 onRegionalFeaturesChanged = viewModel::setRegionalFeaturesEnabled,
                 onLocalAuthChanged = viewModel::setLocalAuthEnabled,
                 onLockMappingChanged = viewModel::setLockStateMapping,
@@ -292,6 +365,9 @@ fun G700RemoteApp(
                 onDownloadUpdate = { viewModel.downloadAndInstallUpdate(activity, it) },
                 onRefresh = viewModel::refreshNow,
                 onShareLog = { onShareLog(viewModel.exportLogText()) },
+                onSendNavigationText = viewModel::sendSharedNavigation,
+                onDeleteNavigationHistory = viewModel::deleteNavigationHistory,
+                onClearNavigationHistory = viewModel::clearNavigationHistory,
                 showUpdates = showUpdates,
                 onUpdatesShown = onUpdatesShown,
                 contentPadding = padding,
@@ -331,12 +407,106 @@ private fun PermissionScreen(
 }
 
 @Composable
+private fun UpdateGateScreen(
+    updateState: AppUpdateState,
+    onCheckForUpdates: () -> Unit,
+    onDownloadUpdate: (AppUpdateInfo) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+            shadowElevation = 3.dp,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(22.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Icon(
+                    Icons.Outlined.Refresh,
+                    contentDescription = null,
+                    modifier = Modifier.size(42.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    when (updateState.gateReason) {
+                        UpdateGateReason.UpdateAvailable -> tr("Update required")
+                        UpdateGateReason.StaleCheck -> tr("Version check required")
+                        UpdateGateReason.None -> tr("App updates")
+                    },
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    when (updateState.gateReason) {
+                        UpdateGateReason.UpdateAvailable -> tr("To make the best use of G700 Remote, update now. This version is out of support while a newer release is available.")
+                        UpdateGateReason.StaleCheck -> tr("G700 Remote needs to check GitHub releases at least every 7 days before vehicle controls can be used.")
+                        UpdateGateReason.None -> tr("G700 Remote is up to date.")
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+                updateState.availableUpdate?.let { info ->
+                    Spacer(Modifier.height(12.dp))
+                    MetricRow(tr("Available version"), info.versionName)
+                }
+                Spacer(Modifier.height(18.dp))
+                updateState.availableUpdate?.let { info ->
+                    Button(
+                        onClick = { onDownloadUpdate(info) },
+                        enabled = !updateState.isDownloading,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(22.dp),
+                    ) {
+                        Text(
+                            if (updateState.isDownloading) {
+                                updateState.downloadProgress?.let { "${tr("Downloading")} $it%" } ?: tr("Downloading")
+                            } else {
+                                tr("Download and install")
+                            },
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                }
+                OutlinedButton(
+                    onClick = onCheckForUpdates,
+                    enabled = !updateState.isChecking && !updateState.isDownloading,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(22.dp),
+                ) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (updateState.isChecking) tr("Checking") else tr("Check for updates"))
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun PairingScreen(
     state: RemoteUiState,
+    permissionsGranted: Boolean,
     onStartScan: () -> Unit,
     onStopScan: () -> Unit,
     onPair: (com.mmy.g700remote.ble.ScannedDevice) -> Unit,
     onPairingCodeChanged: (String) -> Unit,
+    onRequestPermissions: () -> Unit,
+    onStartDemo: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val uriHandler = LocalUriHandler.current
@@ -393,17 +563,17 @@ private fun PairingScreen(
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(
-                        onClick = onStartScan,
+                        onClick = { if (permissionsGranted) onStartScan() else onRequestPermissions() },
                         enabled = !state.isScanning,
                         modifier = Modifier.weight(1f),
                     ) {
                         Icon(Icons.Outlined.BluetoothSearching, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text(tr("Scan"))
+                        Text(if (permissionsGranted) tr("Scan") else tr("Grant permissions"))
                     }
                     OutlinedButton(
                         onClick = onStopScan,
-                        enabled = state.isScanning,
+                        enabled = permissionsGranted && state.isScanning,
                         modifier = Modifier.weight(1f),
                     ) {
                         Text(tr("Stop"))
@@ -453,6 +623,16 @@ private fun PairingScreen(
             }
         }
         item {
+            OutlinedButton(
+                onClick = onStartDemo,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(22.dp),
+            ) {
+                Icon(Icons.Outlined.PlayArrow, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(tr("Try demo mode"))
+            }
+            Spacer(Modifier.height(12.dp))
             Text(
                 tr("DisplayMirror app by Baghdady92"),
                 modifier = Modifier.fillMaxWidth(),
@@ -524,6 +704,7 @@ private fun MainRemoteScaffold(
     onConnectionPreferenceChanged: (ConnectionPreference) -> Unit,
     onAppLanguageChanged: (AppLanguage) -> Unit,
     onAppThemeChanged: (AppTheme) -> Unit,
+    onAppColorModeChanged: (AppColorMode) -> Unit,
     onRegionalFeaturesChanged: (Boolean) -> Unit,
     onLocalAuthChanged: (Boolean) -> Unit,
     onLockMappingChanged: (LockStateMapping) -> Unit,
@@ -533,6 +714,9 @@ private fun MainRemoteScaffold(
     onDownloadUpdate: (AppUpdateInfo) -> Unit,
     onRefresh: () -> Unit,
     onShareLog: () -> Unit,
+    onSendNavigationText: (String) -> Unit,
+    onDeleteNavigationHistory: (Long) -> Unit,
+    onClearNavigationHistory: () -> Unit,
     showUpdates: Boolean,
     onUpdatesShown: () -> Unit,
     contentPadding: PaddingValues,
@@ -551,23 +735,15 @@ private fun MainRemoteScaffold(
             ConnectionHeader(
                 state = state,
                 onRefresh = onRefresh,
+                onOpenHistory = { tab = AppTab.NavigationHistory },
                 onOpenSettings = { tab = AppTab.Settings },
             )
         },
         bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                tonalElevation = 6.dp,
-            ) {
-                AppTab.entries.filter { it != AppTab.Settings }.forEach { item ->
-                    NavigationBarItem(
-                        selected = tab == item,
-                        onClick = { tab = item },
-                        icon = { Icon(item.icon, contentDescription = tr(item.label)) },
-                        label = { Text(tr(item.label)) },
-                    )
-                }
-            }
+            FloatingNavBar(
+                selected = tab,
+                onSelected = { tab = it },
+            )
         },
     ) { padding ->
         val modifier = Modifier
@@ -580,6 +756,13 @@ private fun MainRemoteScaffold(
             AppTab.Openings -> OpeningsScreen(state, onCommand, modifier)
             AppTab.Charging -> ChargingScreen(state, onCommand, modifier)
             AppTab.Lighting -> LightingScreen(state, onCommand, modifier)
+            AppTab.NavigationHistory -> NavigationHistoryScreen(
+                state = state,
+                onSendNavigationText = onSendNavigationText,
+                onDelete = onDeleteNavigationHistory,
+                onClearAll = onClearNavigationHistory,
+                modifier = modifier,
+            )
             AppTab.Settings -> SettingsScreen(
                 state = state,
                 onCommand = onCommand,
@@ -592,6 +775,7 @@ private fun MainRemoteScaffold(
                 onConnectionPreferenceChanged = onConnectionPreferenceChanged,
                 onAppLanguageChanged = onAppLanguageChanged,
                 onAppThemeChanged = onAppThemeChanged,
+                onAppColorModeChanged = onAppColorModeChanged,
                 onRegionalFeaturesChanged = onRegionalFeaturesChanged,
                 onLocalAuthChanged = onLocalAuthChanged,
                 onLockMappingChanged = onLockMappingChanged,
@@ -611,6 +795,7 @@ private fun MainRemoteScaffold(
 private fun ConnectionHeader(
     state: RemoteUiState,
     onRefresh: () -> Unit,
+    onOpenHistory: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     Surface(
@@ -649,6 +834,17 @@ private fun ConnectionHeader(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (state.demoMode) {
+                    Spacer(Modifier.height(4.dp))
+                    AssistChip(
+                        onClick = {},
+                        label = { Text(tr("Demo mode")) },
+                        leadingIcon = { Icon(Icons.Outlined.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                    )
+                }
+            }
+            ExpressiveIconButton(onClick = onOpenHistory) {
+                Icon(Icons.Outlined.Link, contentDescription = tr("Shared links"))
             }
             ExpressiveIconButton(
                 onClick = onRefresh,
@@ -797,6 +993,105 @@ private fun <T> expressiveSpring() = spring<T>(
 )
 
 @Composable
+private fun FloatingNavBar(
+    selected: AppTab,
+    onSelected: (AppTab) -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            shape = RoundedCornerShape(32.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            shadowElevation = 8.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(72.dp)
+                    .padding(horizontal = 6.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AppTab.entries
+                    .filter { it.showInBottomBar }
+                    .forEach { item ->
+                        NavPillItem(
+                            item = item,
+                            selected = selected == item,
+                            onClick = { onSelected(item) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NavPillItem(
+    item: AppTab,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.94f else 1f,
+        animationSpec = expressiveSpring(),
+        label = "nav-pill-scale",
+    )
+    val color by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        animationSpec = expressiveSpring(),
+        label = "nav-pill-color",
+    )
+    val contentColor by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = expressiveSpring(),
+        label = "nav-pill-content",
+    )
+    Surface(
+        modifier = modifier
+            .height(60.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            ),
+        shape = RoundedCornerShape(26.dp),
+        color = color,
+        contentColor = contentColor,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Icon(item.icon, contentDescription = tr(item.label), modifier = Modifier.size(22.dp))
+            Spacer(Modifier.height(3.dp))
+            Text(
+                tr(item.label),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
 private fun HomeScreen(
     state: RemoteUiState,
     onCommand: (RemoteCommand) -> Unit,
@@ -805,10 +1100,11 @@ private fun HomeScreen(
     val ready = state.connectionState is RemoteConnectionState.Ready
     val locked = isLocked(state)
     val lockActionIsUnlock = locked == true
+    val airOn = state.telemetry.fanSpeed?.let { it > 0 }
     LazyColumn(
         modifier = modifier,
-        contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
             Surface(
@@ -821,7 +1117,7 @@ private fun HomeScreen(
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(vertical = 26.dp, horizontal = 18.dp),
+                    modifier = Modifier.padding(vertical = 18.dp, horizontal = 16.dp),
                 ) {
                     Text(
                         lockLabel(state),
@@ -835,7 +1131,7 @@ private fun HomeScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
                     )
-                    Spacer(Modifier.height(20.dp))
+                    Spacer(Modifier.height(14.dp))
                     HeroCommandButton(
                         text = if (lockActionIsUnlock) tr("Unlock") else tr("Lock"),
                         icon = if (lockActionIsUnlock) Icons.Outlined.LockOpen else Icons.Outlined.Lock,
@@ -854,11 +1150,11 @@ private fun HomeScreen(
                 ModeToggleGrid(
                     toggles = listOf(
                         ToggleSpec(
-                            label = tr("AC"),
+                            label = tr("Air conditioner"),
                             icon = Icons.Outlined.AcUnit,
-                            checked = state.telemetry.acOn,
-                            onOn = { onCommand(RemoteCommand.Climate(ClimateAction.AcOn)) },
-                            onOff = { onCommand(RemoteCommand.Climate(ClimateAction.AcOff)) },
+                            checked = airOn,
+                            onOn = { onCommand(RemoteCommand.Climate(ClimateAction.SetFanSpeed, numericValue = 3)) },
+                            onOff = { onCommand(RemoteCommand.Climate(ClimateAction.SetFanSpeed, numericValue = 0)) },
                         ),
                         ToggleSpec(
                             label = tr("Hazards"),
@@ -883,6 +1179,7 @@ private fun ClimateScreen(
 ) {
     val ready = state.connectionState is RemoteConnectionState.Ready
     val telemetry = state.telemetry
+    val airOn = telemetry.fanSpeed?.let { it > 0 }
     LazyColumn(
         modifier = modifier,
         contentPadding = PaddingValues(20.dp),
@@ -892,11 +1189,11 @@ private fun ClimateScreen(
             Section(tr("Cabin")) {
                 ModeToggleBox(
                     spec = ToggleSpec(
-                        label = tr("AC"),
+                        label = tr("Air conditioner"),
                         icon = Icons.Outlined.AcUnit,
-                        checked = telemetry.acOn,
-                        onOn = { onCommand(RemoteCommand.Climate(ClimateAction.AcOn)) },
-                        onOff = { onCommand(RemoteCommand.Climate(ClimateAction.AcOff)) },
+                        checked = airOn,
+                        onOn = { onCommand(RemoteCommand.Climate(ClimateAction.SetFanSpeed, numericValue = 3)) },
+                        onOff = { onCommand(RemoteCommand.Climate(ClimateAction.SetFanSpeed, numericValue = 0)) },
                     ),
                     enabled = ready,
                 )
@@ -930,6 +1227,20 @@ private fun ClimateScreen(
             }
         }
         item {
+            Section(tr("Aux AC controls")) {
+                ModeToggleBox(
+                    spec = ToggleSpec(
+                        label = tr("A/C compressor"),
+                        icon = Icons.Outlined.AcUnit,
+                        checked = telemetry.acOn,
+                        onOn = { onCommand(RemoteCommand.Climate(ClimateAction.AcOn)) },
+                        onOff = { onCommand(RemoteCommand.Climate(ClimateAction.AcOff)) },
+                    ),
+                    enabled = ready,
+                )
+            }
+        }
+        item {
             Section(tr("Modes")) {
                 ModeToggleGrid(
                     toggles = listOf(
@@ -939,9 +1250,6 @@ private fun ClimateScreen(
                         ToggleSpec(tr("Fast heat"), Icons.Outlined.Thermostat, telemetry.fastHeat,
                             onOn = { onCommand(RemoteCommand.Climate(ClimateAction.FastHeatOn)) },
                             onOff = { onCommand(RemoteCommand.Climate(ClimateAction.FastHeatOff)) }),
-                        ToggleSpec(tr("Auto defrost"), Icons.Outlined.Air, telemetry.autoDefrost,
-                            onOn = { onCommand(RemoteCommand.Climate(ClimateAction.AutoDefrostOn)) },
-                            onOff = { onCommand(RemoteCommand.Climate(ClimateAction.AutoDefrostOff)) }),
                         ToggleSpec(tr("Rear defrost"), Icons.Outlined.Window, telemetry.rearDefrost,
                             onOn = { onCommand(RemoteCommand.Climate(ClimateAction.RearDefrostOn)) },
                             onOff = { onCommand(RemoteCommand.Climate(ClimateAction.RearDefrostOff)) }),
@@ -1217,6 +1525,137 @@ private fun LightingScreen(
 }
 
 @Composable
+private fun NavigationHistoryScreen(
+    state: RemoteUiState,
+    onSendNavigationText: (String) -> Unit,
+    onDelete: (Long) -> Unit,
+    onClearAll: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var confirmClear by remember { mutableStateOf(false) }
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text(tr("Clear shared links?")) },
+            text = { Text(tr("This removes all saved shared-location history from this phone.")) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmClear = false
+                        onClearAll()
+                    },
+                ) { Text(tr("Clear all")) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClear = false }) { Text(tr("Cancel")) }
+            },
+        )
+    }
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
+                    Text(tr("Shared links"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(
+                        tr("Locations shared to the car can be resent from here."),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (state.navigationHistory.isNotEmpty()) {
+                    ExpressiveIconButton(onClick = { confirmClear = true }) {
+                        Icon(Icons.Outlined.DeleteSweep, contentDescription = tr("Clear all"))
+                    }
+                }
+            }
+        }
+        if (state.navigationHistory.isEmpty()) {
+            item {
+                Section(tr("History")) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(Icons.Outlined.Link, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(8.dp))
+                        Text(tr("No shared links yet"), fontWeight = FontWeight.SemiBold)
+                        Text(
+                            tr("Share a Google Maps place or geo link to G700 Remote."),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+            }
+        } else {
+            items(state.navigationHistory, key = { it.id }) { entry ->
+                NavigationHistoryRow(
+                    entry = entry,
+                    onResend = { onSendNavigationText(entry.originalText) },
+                    onDelete = { onDelete(entry.id) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NavigationHistoryRow(
+    entry: NavigationHistoryEntry,
+    onResend: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.26f)),
+        shadowElevation = 2.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+                Box(modifier = Modifier.size(42.dp), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Outlined.Link, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                }
+            }
+            Column(Modifier.weight(1f)) {
+                Text(entry.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                Text(
+                    entry.detail,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    formatTimeAgo(entry.sentAtMillis),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            ExpressiveIconButton(onClick = onResend) {
+                Icon(Icons.Outlined.Send, contentDescription = tr("Resend"))
+            }
+            ExpressiveIconButton(onClick = onDelete) {
+                Icon(Icons.Outlined.Close, contentDescription = tr("Delete"))
+            }
+        }
+    }
+}
+
+@Composable
 private fun SettingsScreen(
     state: RemoteUiState,
     onCommand: (RemoteCommand) -> Unit,
@@ -1229,6 +1668,7 @@ private fun SettingsScreen(
     onConnectionPreferenceChanged: (ConnectionPreference) -> Unit,
     onAppLanguageChanged: (AppLanguage) -> Unit,
     onAppThemeChanged: (AppTheme) -> Unit,
+    onAppColorModeChanged: (AppColorMode) -> Unit,
     onRegionalFeaturesChanged: (Boolean) -> Unit,
     onLocalAuthChanged: (Boolean) -> Unit,
     onLockMappingChanged: (LockStateMapping) -> Unit,
@@ -1342,7 +1782,24 @@ private fun SettingsScreen(
             }
         }
         item {
-            Section(tr("Theme")) {
+            Section(tr("Themes & color")) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    SegmentedChoice(
+                        label = tr("Dark"),
+                        selected = state.appColorMode == AppColorMode.Dark,
+                        enabled = true,
+                        modifier = Modifier.weight(1f),
+                        onClick = { onAppColorModeChanged(AppColorMode.Dark) },
+                    )
+                    SegmentedChoice(
+                        label = tr("Light"),
+                        selected = state.appColorMode == AppColorMode.Light,
+                        enabled = true,
+                        modifier = Modifier.weight(1f),
+                        onClick = { onAppColorModeChanged(AppColorMode.Light) },
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
                 ThemeSelector(
                     selected = state.appTheme,
                     onTheme = onAppThemeChanged,
@@ -1631,6 +2088,7 @@ private fun FanBarControl(
                 Box(
                     modifier = Modifier
                         .weight(1f)
+                        .fillMaxSize()
                         .clickable(enabled = enabled) { onValue(level) },
                     contentAlignment = Alignment.BottomCenter,
                 ) {
@@ -1681,7 +2139,7 @@ private fun ModeToggleBox(
 ) {
     val active = spec.checked == true
     ExpressiveActionSurface(
-        modifier = modifier.height(70.dp),
+        modifier = modifier.height(64.dp),
         enabled = enabled,
         selected = active,
         onClick = { if (active) spec.onOff() else spec.onOn() },
@@ -1728,9 +2186,9 @@ private fun ActionBoxGrid(
                         selected = false,
                         onClick = action.onClick,
                         modifier = if (fullWidthLastSingle && rowActions.size == 1) {
-                            Modifier.fillMaxWidth().height(66.dp)
+                            Modifier.fillMaxWidth().height(60.dp)
                         } else {
-                            Modifier.weight(1f).height(66.dp)
+                            Modifier.weight(1f).height(60.dp)
                         },
                     ) {
                         Icon(action.icon, contentDescription = null, modifier = Modifier.size(20.dp))
@@ -1758,7 +2216,7 @@ private fun TelemetryGrid(state: RemoteUiState) {
         val tiles = listOf(
             TileData(tr("Battery"), state.telemetry.batterySoc?.let { "$it%" } ?: tr("Unknown"), Icons.Outlined.ElectricBolt),
             TileData(tr("Fuel"), state.telemetry.fuelPercent?.let { "$it%" } ?: tr("Unknown"), Icons.Outlined.LocalGasStation),
-            TileData(tr("AC"), when (state.telemetry.acOn) {
+            TileData(tr("Air"), when (state.telemetry.fanSpeed?.let { it > 0 }) {
                 true -> tr("On")
                 false -> tr("Off")
                 null -> tr("Unknown")
@@ -1789,7 +2247,7 @@ private fun Section(
     title: String,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             title,
             style = MaterialTheme.typography.titleMedium,
@@ -1806,7 +2264,7 @@ private fun Section(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(13.dp),
                 content = content,
             )
         }
@@ -1913,7 +2371,7 @@ private fun HeroCommandButton(
         label = "hero-command-scale",
     )
     val size by animateDpAsState(
-        targetValue = if (pressed && enabled) 124.dp else 136.dp,
+        targetValue = if (pressed && enabled) 106.dp else 118.dp,
         animationSpec = expressiveSpring(),
         label = "hero-command-size",
     )
@@ -2395,7 +2853,7 @@ private fun MetricTile(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 9.dp),
+                .padding(horizontal = 7.dp, vertical = 7.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (icon != null) {
@@ -2437,13 +2895,14 @@ private fun MappingChip(
     )
 }
 
-private enum class AppTab(val label: String, val icon: ImageVector) {
+private enum class AppTab(val label: String, val icon: ImageVector, val showInBottomBar: Boolean = true) {
     Home("Home", Icons.Outlined.DirectionsCar),
     Climate("Climate", Icons.Outlined.Thermostat),
     Openings("Windows", Icons.Outlined.Window),
     Charging("Charge", Icons.Outlined.Bolt),
     Lighting("Lights", Icons.Outlined.Lightbulb),
-    Settings("Settings", Icons.Outlined.Settings),
+    NavigationHistory("Links", Icons.Outlined.Link, showInBottomBar = false),
+    Settings("Settings", Icons.Outlined.Settings, showInBottomBar = false),
 }
 
 @Composable
@@ -2480,9 +2939,11 @@ private fun TransportKind.label(): String = when (this) {
 }
 
 private fun AppTheme.label(): String = when (this) {
-    AppTheme.Minimal -> "Minimal"
     AppTheme.G700Horizon -> "G700 Horizon"
+    AppTheme.HimalayaSlate -> "Himalaya Slate"
+    AppTheme.NomadStone -> "Nomad Stone"
     AppTheme.ModernPastel -> "Modern Pastel"
+    AppTheme.Minimal -> "Minimal"
 }
 
 @Composable
@@ -2501,6 +2962,78 @@ private fun formatTimeAgo(value: Long): String =
 
 private fun formatChargeMode(value: String?): String? =
     value?.uppercase()?.replace('_', ' ')
+
+private fun demoTelemetry(): VehicleTelemetry =
+    VehicleTelemetry(
+        lockState = 1,
+        cabinTemp = 24.0,
+        outdoorTemp = 32.0,
+        coolantTemp = 76.0,
+        batterySoc = 68,
+        fuelPercent = 57,
+        acOn = true,
+        tempLeft = 22.0,
+        tempRight = 22.0,
+        fanSpeed = 3,
+        fastCool = false,
+        fastHeat = false,
+        rearDefrost = false,
+        hazardsOn = false,
+        drlOn = true,
+        parkingChargeTargetSoc = 50,
+        chargeMode = "idle",
+        raceChargeActive = false,
+        raceChargeTarget = 80,
+        seatVentLevels = mapOf("fl" to 1, "fr" to 0, "rl" to 0, "rr" to 0),
+        seatHeatLevels = mapOf("fl" to 0, "fr" to 0, "rl" to 0, "rr" to 0),
+    )
+
+private fun applyDemoCommand(telemetry: VehicleTelemetry, command: RemoteCommand): VehicleTelemetry =
+    when (command) {
+        RemoteCommand.Lock -> telemetry.copy(lockState = 1)
+        RemoteCommand.Unlock -> telemetry.copy(lockState = 2)
+        is RemoteCommand.Hazards -> telemetry.copy(hazardsOn = command.action == OnOffAction.On)
+        is RemoteCommand.Drl -> telemetry.copy(drlOn = command.action == OnOffAction.On)
+        is RemoteCommand.ParkingCharge -> telemetry.copy(
+            parkingChargeMode = when (command.action) {
+                ParkingChargeAction.Off -> 0
+                ParkingChargeAction.Quiet -> 1
+                ParkingChargeAction.Fast -> 2
+                ParkingChargeAction.Status -> telemetry.parkingChargeMode
+            },
+        )
+        is RemoteCommand.RaceCharge -> telemetry.copy(
+            raceChargeActive = command.action == RaceChargeAction.Start ||
+                (command.action == RaceChargeAction.Status && telemetry.raceChargeActive == true),
+            raceChargeTarget = command.target ?: telemetry.raceChargeTarget,
+        )
+        is RemoteCommand.Climate -> when (command.action) {
+            ClimateAction.AcOn -> telemetry.copy(acOn = true)
+            ClimateAction.AcOff -> telemetry.copy(acOn = false)
+            ClimateAction.SetTempLeft -> telemetry.copy(tempLeft = command.numericValue?.toDouble() ?: telemetry.tempLeft)
+            ClimateAction.SetTempRight -> telemetry.copy(tempRight = command.numericValue?.toDouble() ?: telemetry.tempRight)
+            ClimateAction.SetFanSpeed -> telemetry.copy(fanSpeed = command.numericValue?.toInt()?.coerceIn(0, 10) ?: telemetry.fanSpeed)
+            ClimateAction.FastCoolOn -> telemetry.copy(fastCool = true)
+            ClimateAction.FastCoolOff -> telemetry.copy(fastCool = false)
+            ClimateAction.FastHeatOn -> telemetry.copy(fastHeat = true)
+            ClimateAction.FastHeatOff -> telemetry.copy(fastHeat = false)
+            ClimateAction.RearDefrostOn -> telemetry.copy(rearDefrost = true)
+            ClimateAction.RearDefrostOff -> telemetry.copy(rearDefrost = false)
+            ClimateAction.SetSeatVent -> {
+                val position = command.position?.wireValue ?: return telemetry
+                telemetry.copy(seatVentLevels = telemetry.seatVentLevels + (position to (command.level ?: 0).coerceIn(0, 3)))
+            }
+            ClimateAction.SetSeatHeat -> {
+                val position = command.position?.wireValue ?: return telemetry
+                telemetry.copy(seatHeatLevels = telemetry.seatHeatLevels + (position to (command.level ?: 0).coerceIn(0, 3)))
+            }
+            ClimateAction.ParkingAcSmart -> telemetry.copy(fanSpeed = 3, acOn = true)
+            ClimateAction.ParkingAcVent -> telemetry.copy(fanSpeed = 3, acOn = false)
+            ClimateAction.ParkingAcOff -> telemetry.copy(fanSpeed = 0, acOn = false)
+            else -> telemetry
+        }
+        else -> telemetry
+    }
 
 private val ArabicTranslations = mapOf(
     "Confirm" to "تأكيد",
@@ -2531,10 +3064,14 @@ private val ArabicTranslations = mapOf(
     "Scan" to "بحث",
     "Stop" to "إيقاف",
     "Clear" to "مسح",
+    "Try demo mode" to "تجربة الوضع التجريبي",
+    "Demo mode" to "وضع تجريبي",
+    "Demo mode only. No command was sent to the car." to "الوضع التجريبي فقط. لم يتم إرسال أي أمر للسيارة.",
     "Unnamed DisplayMirror device" to "جهاز DisplayMirror بدون اسم",
     "Unnamed" to "بدون اسم",
     "No paired device" to "لا يوجد جهاز مقترن",
     "Refresh status" to "تحديث الحالة",
+    "Shared links" to "الروابط المرسلة",
     "Disconnect" to "قطع الاتصال",
     "More" to "المزيد",
     "Settings" to "الإعدادات",
@@ -2559,6 +3096,10 @@ private val ArabicTranslations = mapOf(
     "Fuel" to "الوقود",
     "Coolant" to "حرارة المحرك",
     "AC" to "المكيّف",
+    "Air" to "الهواء",
+    "Air conditioner" to "تشغيل المكيّف",
+    "Aux AC controls" to "تحكم المكيّف الإضافي",
+    "A/C compressor" to "كمبروسر المكيّف",
     "Left" to "اليسار",
     "Right" to "اليمين",
     "Left temp" to "حرارة اليسار",
@@ -2628,8 +3169,13 @@ private val ArabicTranslations = mapOf(
     "Language" to "اللغة",
     "App language" to "لغة التطبيق",
     "Theme" to "المظهر",
+    "Themes & color" to "المظهر والألوان",
+    "Dark" to "داكن",
+    "Light" to "فاتح",
     "Minimal" to "بسيط",
     "G700 Horizon" to "أفق G700",
+    "Himalaya Slate" to "هيمالايا سليت",
+    "Nomad Stone" to "حجر الصحراء",
     "Modern Pastel" to "عصري هادئ",
     "Pairing" to "الاقتران",
     "Device" to "الجهاز",
@@ -2669,6 +3215,11 @@ private val ArabicTranslations = mapOf(
     "Get car location" to "جلب موقع السيارة",
     "Export redacted protocol log" to "تصدير سجل البروتوكول بعد حجب البيانات",
     "App updates" to "تحديثات التطبيق",
+    "Update required" to "التحديث مطلوب",
+    "Version check required" to "يلزم فحص الإصدار",
+    "To make the best use of G700 Remote, update now. This version is out of support while a newer release is available." to "لأفضل استخدام لتطبيق G700 Remote، قم بالتحديث الآن. هذا الإصدار أصبح خارج الدعم مع توفر إصدار أحدث.",
+    "G700 Remote needs to check GitHub releases at least every 7 days before vehicle controls can be used." to "يحتاج G700 Remote إلى فحص إصدارات GitHub مرة كل 7 أيام على الأقل قبل استخدام أوامر السيارة.",
+    "G700 Remote is up to date." to "G700 Remote محدث.",
     "Current version" to "الإصدار الحالي",
     "Last checked" to "آخر فحص",
     "Available version" to "الإصدار المتاح",
@@ -2677,6 +3228,16 @@ private val ArabicTranslations = mapOf(
     "Check for updates" to "التحقق من التحديثات",
     "Checking" to "جار التحقق",
     "Checks GitHub releases for signed APK updates twice daily." to "يفحص إصدارات GitHub مرتين يومياً لتحديثات APK الموقعة.",
+    "Links" to "الروابط",
+    "Locations shared to the car can be resent from here." to "يمكن إعادة إرسال المواقع التي تمت مشاركتها مع السيارة من هنا.",
+    "Clear shared links?" to "مسح الروابط المرسلة؟",
+    "This removes all saved shared-location history from this phone." to "سيتم حذف سجل المواقع المرسلة المحفوظ على هذا الهاتف.",
+    "Clear all" to "مسح الكل",
+    "History" to "السجل",
+    "No shared links yet" to "لا توجد روابط مرسلة بعد",
+    "Share a Google Maps place or geo link to G700 Remote." to "شارك موقعاً من خرائط Google أو رابط geo إلى G700 Remote.",
+    "Resend" to "إعادة إرسال",
+    "Delete" to "حذف",
     "Developed by Mahmood Majeed with ❤️ in Bahrain 🇧🇭" to "تم التطوير بواسطة Mahmood Majeed ❤️ في البحرين 🇧🇭",
     "Disconnected" to "غير متصل",
     "Scanning" to "جار البحث",

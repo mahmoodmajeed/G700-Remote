@@ -19,7 +19,7 @@ class UpdateCheckWorker(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
-        val update = runCatching { AppUpdateManager.fetchLatestUpdate(applicationContext) }
+        val update = runCatching { AppUpdateManager.checkLatestAndRecord(applicationContext) }
             .getOrElse { return Result.retry() }
             ?: return Result.success()
 

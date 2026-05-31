@@ -2,13 +2,13 @@
 
 G700 Remote is a Kotlin Android companion app for Jetour G700 head units running the open-source DisplayMirror app. It connects to DisplayMirror's remote-access protocol over Bluetooth LE or LAN/mDNS and provides a focused phone remote for lock/unlock, climate, openings, lighting, charging, and vehicle telemetry that DisplayMirror exposes.
 
-This repository started from the v1.2 baseline and now tracks the v1.4 release. It is intended as the clean source baseline for future development, CI, Play Store preparation, and Codex-assisted changes.
+This repository started from the v1.2 baseline and now tracks the v1.4.1 release. It is intended as the clean source baseline for future development, CI, Play Store preparation, and Codex-assisted changes.
 
 ## Status
 
-- App version: `1.4`
+- App version: `1.4.1`
 - Android package: `com.mmy.g700remote`
-- `versionCode`: `5`
+- `versionCode`: `6`
 - Minimum Android: API 30
 - Target/compile SDK: API 36
 - UI: Jetpack Compose Material 3 with an expressive spring-motion surface system
@@ -44,21 +44,23 @@ For implementation details, see [docs/DISPLAYMIRROR_COMPATIBILITY.md](docs/DISPL
 
 ## Features
 
-- First-time setup with pairing-code entry and a link to DisplayMirror.
+- First-time setup with pairing-code entry, a link to DisplayMirror, and a demo mode for review/testing without a paired car.
 - Material 3 Expressive-inspired UI with responsive spring press motion, larger tactile surfaces, and a Jetour-branded header.
+- Dark/light appearance setting, defaulting to dark mode on first install, plus professional G700-inspired color themes.
 - BLE scanning, LAN/mDNS discovery, and user-selectable transport priority.
 - Smart lock/unlock home action based on returned lock state.
 - Compact vehicle telemetry tiles for battery SOC, fuel, AC, cabin/outside temperature, and coolant when returned.
-- Quick AC and hazard toggles with clear on/off state.
-- Climate control with left/right temperatures, 10-step fan bars, mode toggles, parking AC, and seat ventilation.
+- Quick air-conditioner and hazard toggles with clear on/off state.
+- Climate control with left/right temperatures, 10-step fan bars, mode toggles, parking AC, seat ventilation, and a separate A/C compressor control.
 - Optional regional controls for steering heat, seat heating, and PM2.5 filter. These are hidden by default.
 - Window, sunroof, and sunshade controls.
 - Charging controls including target SOC, parking charge, race charge start/stop/status, and returned charging telemetry.
 - Lighting controls for hazards and Daytime Running Lights.
 - Side mirror fold/unfold controls when DisplayMirror accepts the command.
-- Share-to-car navigation: share Google Maps, `geo:` links, Google navigation links, coordinates, or place text to G700 Remote and the app forwards it to DisplayMirror.
+- Share-to-car navigation: share Google Maps, `geo:` links, Google navigation links, coordinates, or place text to G700 Remote and the app resolves coordinates or forwards a clean destination to DisplayMirror.
+- Shared-link history with resend, delete, and clear-all confirmation.
 - Settings for merged connectivity/pairing, language, theme, security gate, regional features, and diagnostics.
-- Settings app update checker using GitHub Releases, with manual check and twice-daily background checks.
+- Settings app update checker using GitHub Releases, with manual check, twice-daily background checks, and a 7-day freshness gate so outdated builds stop controlling the car until the update check succeeds.
 - Local biometric/PIN gate for sensitive actions when enabled.
 - Redacted protocol log export for troubleshooting.
 
@@ -68,6 +70,8 @@ For implementation details, see [docs/DISPLAYMIRROR_COMPATIBILITY.md](docs/DISPL
 - The "car left running after walking away" background notification is intentionally not implemented because the inspected DisplayMirror remote protocol does not expose a reliable remote ignition/power mode.
 - Rear/ceiling screen controls are intentionally absent because the inspected DisplayMirror remote protocol does not expose those commands.
 - Hazards, DRL, and mirror commands can be sent, but DisplayMirror does not currently return confirmed live status for those fields in the general remote status payload.
+- Remote DisplayMirror protocol v4 exposes compressor `ac_on`/`ac_off`, not a full HVAC power command. G700 Remote uses fan speed `0` for cabin air off and restores a low fan speed for cabin air on, while compressor control stays separate.
+- Auto climate mode and auto defrost controls are intentionally hidden until DisplayMirror exposes reliable remote behavior for them.
 - Android does not allow silent APK installation for normal apps. The updater downloads the signed APK and opens the Android package installer after the user grants install-from-this-source permission.
 - Values are displayed only when returned by DisplayMirror. Missing fields remain unknown instead of being faked.
 - Lock-state semantics may need real vehicle calibration if DisplayMirror or the head unit changes the returned mapping.
