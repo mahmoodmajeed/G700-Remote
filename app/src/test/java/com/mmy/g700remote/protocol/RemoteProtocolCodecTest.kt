@@ -103,6 +103,25 @@ class RemoteProtocolCodecTest {
         assertEquals(26.2285, dataCoords?.lat ?: 0.0, 0.0)
         assertEquals(50.5860, dataCoords?.lon ?: 0.0, 0.0)
 
+        val expandedShortLink = NavigationShareParser.parse(
+            "https://www.google.com/maps/place/3GC5%2B9XG,+Hamad+Town/data=!4m6!3m5!1s0x3e49b2a13c72e775:0xaf8ea521a8622fae!7e2!8m2!3d26.0712272!4d50.5100822",
+        )
+        assertEquals(26.0712272, expandedShortLink?.lat ?: 0.0, 0.0)
+        assertEquals(50.5100822, expandedShortLink?.lon ?: 0.0, 0.0)
+        assertEquals("3GC5+9XG, Hamad Town", expandedShortLink?.label)
+        assertEquals(
+            "3GC5+9XG, Hamad Town",
+            NavigationShareParser.googlePlaceName("https://www.google.com/maps/place/3GC5%2B9XG,+Hamad+Town/data=!4m6!3d26.0712272!4d50.5100822"),
+        )
+        assertEquals(
+            "https://maps.app.goo.gl/iu7Wvm2fxfd5nwrF8?g_st=ac",
+            NavigationShareParser.firstShareUri("Place\nhttps://maps.app.goo.gl/iu7Wvm2fxfd5nwrF8?g_st=ac"),
+        )
+        assertEquals(
+            "geo:0,0?q=26.0712272,50.5100822",
+            NavigationShareParser.firstShareUri("geo:0,0?q=26.0712272,50.5100822"),
+        )
+
         val query = NavigationShareParser.parse("Bahrain International Circuit")
         assertEquals("Bahrain International Circuit", query?.query)
     }

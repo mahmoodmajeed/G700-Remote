@@ -116,6 +116,16 @@ data class NavigationHistoryEntry(
     val detail: String,
     val originalText: String,
     val sentAtMillis: Long,
+    val previewText: String? = null,
+    val originalLink: String? = null,
+)
+
+data class NavigationShareResult(
+    val title: String,
+    val detail: String,
+    val sent: Boolean,
+    val saved: Boolean,
+    val errorMessage: String? = null,
 )
 
 enum class UpdateGateReason {

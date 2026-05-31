@@ -1,6 +1,6 @@
 # DisplayMirror Compatibility
 
-This document records the compatibility assumptions used for the v1.4.2 release. It is a source summary, not a replacement for re-checking future DisplayMirror APK releases.
+This document records the compatibility assumptions used for the v1.4.3 release. It is a source summary, not a replacement for re-checking future DisplayMirror APK releases.
 
 ## Head Unit Requirement
 

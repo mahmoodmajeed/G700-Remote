@@ -2,13 +2,13 @@
 
 G700 Remote is a Kotlin Android companion app for Jetour G700 head units running the open-source DisplayMirror app. It connects to DisplayMirror's remote-access protocol over Bluetooth LE or LAN/mDNS and provides a focused phone remote for lock/unlock, climate, openings, lighting, charging, and vehicle telemetry that DisplayMirror exposes.
 
-This repository started from the v1.2 baseline and now tracks the v1.4.2 release. It is intended as the clean source baseline for future development, CI, Play Store preparation, and Codex-assisted changes.
+This repository started from the v1.2 baseline and now tracks the v1.4.3 release. It is intended as the clean source baseline for future development, CI, Play Store preparation, and Codex-assisted changes.
 
 ## Status
 
-- App version: `1.4.2`
+- App version: `1.4.3`
 - Android package: `com.mmy.g700remote`
-- `versionCode`: `7`
+- `versionCode`: `8`
 - Minimum Android: API 30
 - Target/compile SDK: API 36
 - UI: Jetpack Compose Material 3 with an expressive spring-motion surface system
@@ -46,20 +46,20 @@ For implementation details, see [docs/DISPLAYMIRROR_COMPATIBILITY.md](docs/DISPL
 
 - First-time setup with pairing-code entry, a link to DisplayMirror, and a demo mode for review/testing without a paired car.
 - Material 3 Expressive-inspired UI with responsive spring press motion, larger tactile surfaces, and a Jetour-branded header.
-- v1.4.2 visual polish for cleaner action buttons, improved header spacing, and a larger home lock/unlock control.
+- v1.4.3 shared-link previews, compact openings layout, demo control in Settings, and refined climate top controls.
 - Dark/light appearance setting, defaulting to dark mode on first install, plus professional G700-inspired color themes.
 - BLE scanning, LAN/mDNS discovery, and user-selectable transport priority.
 - Smart lock/unlock home action based on returned lock state.
 - Compact vehicle telemetry tiles for battery SOC, fuel, AC, cabin/outside temperature, and coolant when returned.
 - Quick air-conditioner and hazard toggles with clear on/off state.
-- Climate control with left/right temperatures, 10-step fan bars, mode toggles, parking AC, seat ventilation, and a separate A/C compressor control.
+- Climate control with left/right temperatures, 10-step fan bars, mode toggles, parking AC, seat ventilation, and a compact A/C compressor control beside cabin air on/off.
 - Optional regional controls for steering heat, seat heating, and PM2.5 filter. These are hidden by default.
 - Window, sunroof, and sunshade controls.
 - Charging controls including target SOC, parking charge, race charge start/stop/status, and returned charging telemetry.
 - Lighting controls for hazards and Daytime Running Lights.
 - Side mirror fold/unfold controls when DisplayMirror accepts the command.
 - Share-to-car navigation: share Google Maps, `geo:` links, Google navigation links, coordinates, or place text to G700 Remote and the app resolves coordinates or forwards a clean destination to DisplayMirror.
-- Shared-link history with resend, delete, and clear-all confirmation.
+- Shared-link history with readable place names when available, original-link open back into Maps/browser, resend, delete confirmation, and clear-all confirmation.
 - Settings for merged connectivity/pairing, language, theme, security gate, regional features, and diagnostics.
 - Settings app update checker using GitHub Releases, with manual check, twice-daily background checks, and a 7-day freshness gate so outdated builds stop controlling the car until the update check succeeds.
 - Local biometric/PIN gate for sensitive actions when enabled.

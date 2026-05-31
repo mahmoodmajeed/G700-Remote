@@ -1,5 +1,6 @@
 package com.mmy.g700remote.data
 
+import android.net.Uri
 import com.mmy.g700remote.ble.DisplayMirrorTransport
 import com.mmy.g700remote.ble.RemoteConnectionState
 import com.mmy.g700remote.ble.ScannedDevice
@@ -238,15 +239,27 @@ class RemoteRepository(
         }
     }
 
-    fun sendSharedNavigation(text: String) {
+    fun sendSharedNavigation(
+        text: String,
+        onResult: (NavigationShareResult) -> Unit = {},
+    ) {
         scope.launch {
             val expandedText = resolveSharedNavigationText(text)
             val command = NavigationShareParser.parse(expandedText) ?: NavigationShareParser.parse(text)
             if (command == null) {
                 _uiState.update { it.copy(lastError = "No destination found in shared text") }
+                onResult(
+                    NavigationShareResult(
+                        title = "Shared location",
+                        detail = "No destination found in shared text",
+                        sent = false,
+                        saved = false,
+                        errorMessage = "No destination found in shared text",
+                    ),
+                )
                 return@launch
             }
-            addNavigationHistory(text, command)
+            val entry = addNavigationHistory(text, expandedText, command)
             if (_uiState.value.connectionState !is RemoteConnectionState.Ready) {
                 connectSaved()
                 runCatching {
@@ -255,7 +268,18 @@ class RemoteRepository(
                     }
                 }
             }
-            sendImmediate(command)
+            val ready = _uiState.value.connectionState is RemoteConnectionState.Ready
+            val sent = if (ready) sendImmediate(command) else false
+            val error = if (sent) null else _uiState.value.lastError ?: "Not connected to DisplayMirror"
+            onResult(
+                NavigationShareResult(
+                    title = entry.title,
+                    detail = entry.detail,
+                    sent = sent,
+                    saved = true,
+                    errorMessage = error,
+                ),
+            )
         }
     }
 
@@ -296,12 +320,14 @@ class RemoteRepository(
         sendForRefresh(RemoteCommand.RaceCharge(RaceChargeAction.Status))
     }
 
-    private suspend fun sendImmediate(command: RemoteCommand) {
+    private suspend fun sendImmediate(command: RemoteCommand): Boolean {
+        var success = false
         runCatching {
             appendLog(ProtocolLogEntry.Direction.Tx, RemoteProtocolCodec.encodeCommand(command))
             val response = transport.send(command)
             applyResponse(response)
             if (response !is RemoteResponse.Error) {
+                success = true
                 applyCommandEcho(command)
                 if (command is RemoteCommand.Climate && command.action != ClimateAction.Status) {
                     delay(600)
@@ -313,6 +339,7 @@ class RemoteRepository(
             appendLog(ProtocolLogEntry.Direction.Info, "Command failed: $message")
             _uiState.update { it.copy(lastError = message) }
         }
+        return success
     }
 
     private suspend fun sendForRefresh(command: RemoteCommand) {
@@ -519,16 +546,37 @@ class RemoteRepository(
         }
     }
 
-    private fun addNavigationHistory(originalText: String, command: RemoteCommand.Navigate) {
+    private fun addNavigationHistory(
+        originalText: String,
+        expandedText: String,
+        command: RemoteCommand.Navigate,
+    ): NavigationHistoryEntry {
         val now = System.currentTimeMillis()
-        val title = command.label?.takeIf { it.isNotBlank() }
-            ?: command.query?.takeIf { it.isNotBlank() }?.take(80)
-            ?: command.lat?.let { lat -> command.lon?.let { lon -> "%.5f, %.5f".format(lat, lon) } }
+        val originalLink = NavigationShareParser.firstShareUri(originalText)
+        val originalUrl = NavigationShareParser.firstUrl(originalText)
+        val expandedUrl = NavigationShareParser.firstUrl(expandedText)
+        val placeName = NavigationShareParser.googlePlaceName(expandedUrl)
+            ?: NavigationShareParser.googlePlaceName(originalUrl)
+        val coordinates = command.lat?.let { lat ->
+            command.lon?.let { lon -> "%.6f, %.6f".format(Locale.US, lat, lon) }
+        }
+        val title = placeName
+            ?: command.label?.toHistoryTitle(originalUrl)
+            ?: command.query?.toHistoryTitle(originalUrl)?.take(80)
+            ?: coordinates
             ?: "Destination"
+        val linkPreview = compactUrl(originalLink ?: originalUrl ?: expandedUrl)
         val detail = when {
-            command.lat != null && command.lon != null -> "%.6f, %.6f".format(command.lat, command.lon)
-            !command.query.isNullOrBlank() -> command.query.take(140)
+            placeName != null && linkPreview != null -> linkPreview
+            coordinates != null -> coordinates
+            !command.query.isNullOrBlank() -> command.query.toReadableText().take(140)
+            originalUrl != null -> compactUrl(originalUrl) ?: originalUrl.take(140)
             else -> originalText.take(140)
+        }
+        val preview = when {
+            placeName != null && coordinates != null -> coordinates
+            linkPreview != null && linkPreview != detail -> linkPreview
+            else -> null
         }
         val entry = NavigationHistoryEntry(
             id = now,
@@ -536,12 +584,39 @@ class RemoteRepository(
             detail = detail,
             originalText = originalText,
             sentAtMillis = now,
+            previewText = preview,
+            originalLink = originalLink ?: expandedUrl,
         )
         val updated = (listOf(entry) + _uiState.value.navigationHistory.filterNot {
             it.originalText == originalText || it.detail == detail
         }).take(MAX_NAV_HISTORY)
         settings.saveNavigationHistory(updated)
         _uiState.update { it.copy(navigationHistory = updated) }
+        return entry
+    }
+
+    private fun String.toHistoryTitle(originalUrl: String?): String? {
+        val cleaned = toReadableText().trim()
+        if (cleaned.isBlank()) return null
+        if (cleaned.startsWith("http", ignoreCase = true)) return null
+        if (cleaned.startsWith("data=", ignoreCase = true)) return null
+        if (originalUrl != null && cleaned == Uri.parse(originalUrl).lastPathSegment) return null
+        if (!cleaned.any { it.isWhitespace() || it == ',' || it == '+' } && cleaned.length > 14) return null
+        return cleaned
+    }
+
+    private fun String.toReadableText(): String =
+        replace('+', ' ')
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+
+    private fun compactUrl(url: String?): String? {
+        val parsed = runCatching { Uri.parse(url) }.getOrNull() ?: return null
+        val host = parsed.host?.removePrefix("www.") ?: return null
+        val path = parsed.pathSegments
+            .lastOrNull { it.isNotBlank() && it != "maps" && it != "place" && !it.startsWith("data=") }
+            ?.takeIf { it.length <= 64 }
+        return if (path != null) "$host/$path" else host
     }
 
     private suspend fun resolveSharedNavigationText(text: String): String =
@@ -559,7 +634,7 @@ class RemoteRepository(
                 requestMethod = "GET"
                 connectTimeout = 7_000
                 readTimeout = 7_000
-                setRequestProperty("User-Agent", "G700-Remote")
+                setRequestProperty("User-Agent", "Mozilla/5.0 G700-Remote")
             }
             try {
                 val code = connection.responseCode

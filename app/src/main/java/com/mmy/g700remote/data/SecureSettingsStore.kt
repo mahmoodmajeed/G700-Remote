@@ -133,6 +133,8 @@ class SecureSettingsStore(context: Context) : SettingsStore {
                             detail = item.optString("detail"),
                             originalText = item.optString("originalText"),
                             sentAtMillis = item.optLong("sentAtMillis"),
+                            previewText = item.optString("previewText").ifBlank { null },
+                            originalLink = item.optString("originalLink").ifBlank { null },
                         ),
                     )
                 }
@@ -146,14 +148,15 @@ class SecureSettingsStore(context: Context) : SettingsStore {
     override fun saveNavigationHistory(history: List<NavigationHistoryEntry>) {
         val array = JSONArray()
         history.take(MAX_NAV_HISTORY).forEach { entry ->
-            array.put(
-                JSONObject()
-                    .put("id", entry.id)
-                    .put("title", entry.title)
-                    .put("detail", entry.detail)
-                    .put("originalText", entry.originalText)
-                    .put("sentAtMillis", entry.sentAtMillis),
-            )
+            val item = JSONObject()
+                .put("id", entry.id)
+                .put("title", entry.title)
+                .put("detail", entry.detail)
+                .put("originalText", entry.originalText)
+                .put("sentAtMillis", entry.sentAtMillis)
+            entry.previewText?.let { item.put("previewText", it) }
+            entry.originalLink?.let { item.put("originalLink", it) }
+            array.put(item)
         }
         prefs.edit().putString(KEY_NAVIGATION_HISTORY, array.toString()).apply()
     }

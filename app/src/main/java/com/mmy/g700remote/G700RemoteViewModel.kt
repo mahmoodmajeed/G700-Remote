@@ -16,6 +16,7 @@ import com.mmy.g700remote.data.RemoteUiState
 import com.mmy.g700remote.data.SecureSettingsStore
 import com.mmy.g700remote.data.AppUpdateInfo
 import com.mmy.g700remote.data.AppUpdateState
+import com.mmy.g700remote.data.NavigationShareResult
 import com.mmy.g700remote.network.DisplayMirrorLanClient
 import com.mmy.g700remote.protocol.RemoteCommand
 import com.mmy.g700remote.update.AppUpdateManager
@@ -75,7 +76,8 @@ class G700RemoteViewModel(application: Application) : AndroidViewModel(applicati
     fun setLockStateMapping(mapping: LockStateMapping) = repository.setLockStateMapping(mapping)
     fun setLoggingEnabled(enabled: Boolean) = repository.setLoggingEnabled(enabled)
     fun refreshNow() = repository.refreshNow()
-    fun sendSharedNavigation(text: String) = repository.sendSharedNavigation(text)
+    fun sendSharedNavigation(text: String, onResult: (NavigationShareResult) -> Unit = {}) =
+        repository.sendSharedNavigation(text, onResult)
     fun deleteNavigationHistory(id: Long) = repository.deleteNavigationHistory(id)
     fun clearNavigationHistory() = repository.clearNavigationHistory()
     fun checkForUpdates() = viewModelScope.launch { updateManager.checkNow() }

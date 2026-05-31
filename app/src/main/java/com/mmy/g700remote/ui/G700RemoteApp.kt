@@ -1,6 +1,9 @@
 ﻿package com.mmy.g700remote.ui
 
 import android.app.Activity
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -63,7 +66,6 @@ import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material.icons.outlined.Window
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
@@ -105,6 +107,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -113,6 +116,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -132,12 +136,14 @@ import com.mmy.g700remote.data.AppUpdateInfo
 import com.mmy.g700remote.data.AppUpdateState
 import com.mmy.g700remote.data.LockStateMapping
 import com.mmy.g700remote.data.NavigationHistoryEntry
+import com.mmy.g700remote.data.NavigationShareResult
 import com.mmy.g700remote.data.PairedDevice
 import com.mmy.g700remote.data.RemoteUiState
 import com.mmy.g700remote.data.UpdateGateReason
 import com.mmy.g700remote.data.VehicleTelemetry
 import com.mmy.g700remote.protocol.ClimateAction
 import com.mmy.g700remote.protocol.MirrorAction
+import com.mmy.g700remote.protocol.NavigationShareParser
 import com.mmy.g700remote.protocol.OnOffAction
 import com.mmy.g700remote.protocol.OpenCloseAction
 import com.mmy.g700remote.protocol.ParkingChargeAction
@@ -182,6 +188,9 @@ fun G700RemoteApp(
     var pendingConfirmation by remember { mutableStateOf<RemoteCommand?>(null) }
     var demoMode by rememberSaveable { mutableStateOf(false) }
     var demoTelemetry by remember { mutableStateOf(demoTelemetry()) }
+    var requestedTab by remember { mutableStateOf<AppTab?>(null) }
+    var navigationShareResult by remember { mutableStateOf<NavigationShareResult?>(null) }
+    var showStandaloneHistory by rememberSaveable { mutableStateOf(false) }
 
     fun submit(command: RemoteCommand) {
         if (demoMode) {
@@ -209,7 +218,7 @@ fun G700RemoteApp(
     val displayedState = if (demoMode) {
         state.copy(
             connectionState = RemoteConnectionState.Ready(TransportKind.Ble),
-            pairedDevice = PairedDevice("Demo G700", "DEMO", TransportKind.Ble),
+            pairedDevice = PairedDevice("Demo mode", "DEMO", TransportKind.Ble),
             telemetry = demoTelemetry,
             demoMode = true,
         )
@@ -240,6 +249,20 @@ fun G700RemoteApp(
                     },
                 )
             }
+            navigationShareResult?.let { result ->
+                NavigationShareResultDialog(
+                    result = result,
+                    onDismiss = { navigationShareResult = null },
+                    onOpenHistory = {
+                        navigationShareResult = null
+                        if (displayedState.pairedDevice == null) {
+                            showStandaloneHistory = true
+                        } else {
+                            requestedTab = AppTab.NavigationHistory
+                        }
+                    },
+                )
+            }
 
     LaunchedEffect(state.lastError) {
         state.lastError?.let { snackbarHostState.showSnackbar(it) }
@@ -259,7 +282,9 @@ fun G700RemoteApp(
     LaunchedEffect(sharedNavigationText) {
         val text = sharedNavigationText
         if (!text.isNullOrBlank()) {
-            viewModel.sendSharedNavigation(text)
+            viewModel.sendSharedNavigation(text) { result ->
+                scope.launch { navigationShareResult = result }
+            }
             onSharedNavigationConsumed()
         }
     }
@@ -293,6 +318,19 @@ fun G700RemoteApp(
                 onDownloadUpdate = { viewModel.downloadAndInstallUpdate(activity, it) },
                 modifier = Modifier.padding(padding),
             )
+        } else if (showStandaloneHistory && !demoMode && state.pairedDevice == null) {
+            NavigationHistoryScreen(
+                state = state,
+                onSendNavigationText = { text ->
+                    viewModel.sendSharedNavigation(text) { result ->
+                        scope.launch { navigationShareResult = result }
+                    }
+                },
+                onDelete = viewModel::deleteNavigationHistory,
+                onClearAll = viewModel::clearNavigationHistory,
+                onBack = { showStandaloneHistory = false },
+                modifier = Modifier.padding(padding),
+            )
         } else if (demoMode) {
             MainRemoteScaffold(
                 state = displayedState,
@@ -318,11 +356,18 @@ fun G700RemoteApp(
                 onDownloadUpdate = { viewModel.downloadAndInstallUpdate(activity, it) },
                 onRefresh = { scope.launch { snackbarHostState.showSnackbar(translate(language, "Demo mode only. No command was sent to the car.")) } },
                 onShareLog = { onShareLog(viewModel.exportLogText()) },
-                onSendNavigationText = viewModel::sendSharedNavigation,
+                onSendNavigationText = { text ->
+                    viewModel.sendSharedNavigation(text) { result ->
+                        scope.launch { navigationShareResult = result }
+                    }
+                },
                 onDeleteNavigationHistory = viewModel::deleteNavigationHistory,
                 onClearNavigationHistory = viewModel::clearNavigationHistory,
+                onDemoModeChanged = { enabled -> demoMode = enabled },
                 showUpdates = showUpdates,
                 onUpdatesShown = onUpdatesShown,
+                requestedTab = requestedTab,
+                onRequestedTabConsumed = { requestedTab = null },
                 contentPadding = padding,
             )
         } else if (state.pairedDevice == null) {
@@ -367,11 +412,21 @@ fun G700RemoteApp(
                 onDownloadUpdate = { viewModel.downloadAndInstallUpdate(activity, it) },
                 onRefresh = viewModel::refreshNow,
                 onShareLog = { onShareLog(viewModel.exportLogText()) },
-                onSendNavigationText = viewModel::sendSharedNavigation,
+                onSendNavigationText = { text ->
+                    viewModel.sendSharedNavigation(text) { result ->
+                        scope.launch { navigationShareResult = result }
+                    }
+                },
                 onDeleteNavigationHistory = viewModel::deleteNavigationHistory,
                 onClearNavigationHistory = viewModel::clearNavigationHistory,
+                onDemoModeChanged = { enabled ->
+                    if (enabled) demoTelemetry = demoTelemetry()
+                    demoMode = enabled
+                },
                 showUpdates = showUpdates,
                 onUpdatesShown = onUpdatesShown,
+                requestedTab = requestedTab,
+                onRequestedTabConsumed = { requestedTab = null },
                 contentPadding = padding,
             )
         }
@@ -406,6 +461,50 @@ private fun PermissionScreen(
             Text(tr("Grant permissions"))
         }
     }
+}
+
+@Composable
+private fun NavigationShareResultDialog(
+    result: NavigationShareResult,
+    onDismiss: () -> Unit,
+    onOpenHistory: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                when {
+                    result.sent -> tr("Sent to car")
+                    result.saved -> tr("Saved for later")
+                    else -> tr("Location not sent")
+                },
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(result.title, fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (result.sent) {
+                        tr("The destination was sent to DisplayMirror and saved in Shared links.")
+                    } else if (result.saved) {
+                        "${tr("The destination is saved in Shared links so you can resend it later.")} ${result.errorMessage ?: ""}".trim()
+                    } else {
+                        result.errorMessage ?: tr("G700 Remote could not read a destination from this share.")
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            if (result.saved) {
+                TextButton(onClick = onOpenHistory) { Text(tr("Shared links")) }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(tr("Done")) }
+        },
+    )
 }
 
 @Composable
@@ -719,8 +818,11 @@ private fun MainRemoteScaffold(
     onSendNavigationText: (String) -> Unit,
     onDeleteNavigationHistory: (Long) -> Unit,
     onClearNavigationHistory: () -> Unit,
+    onDemoModeChanged: (Boolean) -> Unit,
     showUpdates: Boolean,
     onUpdatesShown: () -> Unit,
+    requestedTab: AppTab?,
+    onRequestedTabConsumed: () -> Unit,
     contentPadding: PaddingValues,
 ) {
     var tab by rememberSaveable { mutableStateOf(AppTab.Home) }
@@ -730,12 +832,19 @@ private fun MainRemoteScaffold(
             onUpdatesShown()
         }
     }
+    LaunchedEffect(requestedTab) {
+        requestedTab?.let {
+            tab = it
+            onRequestedTabConsumed()
+        }
+    }
     Scaffold(
         modifier = Modifier.padding(contentPadding),
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             ConnectionHeader(
                 state = state,
+                onHome = { tab = AppTab.Home },
                 onRefresh = onRefresh,
                 onOpenHistory = { tab = AppTab.NavigationHistory },
                 onOpenSettings = { tab = AppTab.Settings },
@@ -787,6 +896,7 @@ private fun MainRemoteScaffold(
                 onDownloadUpdate = onDownloadUpdate,
                 onShareLog = onShareLog,
                 onDisconnect = onDisconnect,
+                onDemoModeChanged = onDemoModeChanged,
                 modifier = modifier,
             )
         }
@@ -796,6 +906,7 @@ private fun MainRemoteScaffold(
 @Composable
 private fun ConnectionHeader(
     state: RemoteUiState,
+    onHome: () -> Unit,
     onRefresh: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -811,7 +922,7 @@ private fun ConnectionHeader(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            JetourHeaderMark()
+            JetourHeaderMark(onClick = onHome)
             Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -836,14 +947,6 @@ private fun ConnectionHeader(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (state.demoMode) {
-                    Spacer(Modifier.height(4.dp))
-                    AssistChip(
-                        onClick = {},
-                        label = { Text(tr("Demo mode")) },
-                        leadingIcon = { Icon(Icons.Outlined.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                    )
-                }
             }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -867,8 +970,9 @@ private fun ConnectionHeader(
 }
 
 @Composable
-private fun JetourHeaderMark() {
+private fun JetourHeaderMark(onClick: () -> Unit) {
     Surface(
+        modifier = Modifier.clickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.primary,
         contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -1137,12 +1241,14 @@ private fun HomeScreen(
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
                     )
-                    Text(
-                        if (ready) tr("Ready for remote commands") else tr("Connect to DisplayMirror"),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                    )
+                    if (!ready) {
+                        Text(
+                            tr("Connect to DisplayMirror"),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
                     Spacer(Modifier.height(14.dp))
                     HeroCommandButton(
                         text = if (lockActionIsUnlock) tr("Unlock") else tr("Lock"),
@@ -1199,16 +1305,30 @@ private fun ClimateScreen(
     ) {
         item {
             Section(tr("Cabin")) {
-                ModeToggleBox(
-                    spec = ToggleSpec(
-                        label = tr("Air conditioner"),
-                        icon = Icons.Outlined.AcUnit,
-                        checked = airOn,
-                        onOn = { onCommand(RemoteCommand.Climate(ClimateAction.SetFanSpeed, numericValue = 3)) },
-                        onOff = { onCommand(RemoteCommand.Climate(ClimateAction.SetFanSpeed, numericValue = 0)) },
-                    ),
-                    enabled = ready,
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    ModeToggleBox(
+                        spec = ToggleSpec(
+                            label = tr("Air conditioner"),
+                            icon = Icons.Outlined.AcUnit,
+                            checked = airOn,
+                            onOn = { onCommand(RemoteCommand.Climate(ClimateAction.SetFanSpeed, numericValue = 3)) },
+                            onOff = { onCommand(RemoteCommand.Climate(ClimateAction.SetFanSpeed, numericValue = 0)) },
+                        ),
+                        enabled = ready,
+                        modifier = Modifier.weight(2f),
+                    )
+                    ModeToggleBox(
+                        spec = ToggleSpec(
+                            label = tr("A/C"),
+                            icon = Icons.Outlined.AcUnit,
+                            checked = telemetry.acOn,
+                            onOn = { onCommand(RemoteCommand.Climate(ClimateAction.AcOn)) },
+                            onOff = { onCommand(RemoteCommand.Climate(ClimateAction.AcOff)) },
+                        ),
+                        enabled = ready,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                     TemperatureControlCard(
@@ -1236,20 +1356,6 @@ private fun ClimateScreen(
                 ) {
                     onCommand(RemoteCommand.Climate(ClimateAction.SetFanSpeed, numericValue = it))
                 }
-            }
-        }
-        item {
-            Section(tr("Aux AC controls")) {
-                ModeToggleBox(
-                    spec = ToggleSpec(
-                        label = tr("A/C compressor"),
-                        icon = Icons.Outlined.AcUnit,
-                        checked = telemetry.acOn,
-                        onOn = { onCommand(RemoteCommand.Climate(ClimateAction.AcOn)) },
-                        onOff = { onCommand(RemoteCommand.Climate(ClimateAction.AcOff)) },
-                    ),
-                    enabled = ready,
-                )
             }
         }
         item {
@@ -1325,11 +1431,11 @@ private fun OpeningsScreen(
     val ready = state.connectionState is RemoteConnectionState.Ready
     Column(
         modifier = modifier
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .fillMaxSize()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
-        Section(tr("Windows")) {
+        CompactSection(tr("Windows")) {
             ActionBoxGrid(
                 actions = listOf(
                     ActionSpec(tr("Front open"), Icons.Outlined.Window) {
@@ -1350,9 +1456,10 @@ private fun OpeningsScreen(
                 ),
                 enabled = ready,
                 fullWidthLastSingle = true,
+                itemHeight = 48.dp,
             )
         }
-        Section(tr("Sunshade")) {
+        CompactSection(tr("Sunshade")) {
             ActionBoxGrid(
                 actions = listOf(
                     ActionSpec(tr("Open"), Icons.Outlined.Window) {
@@ -1363,9 +1470,10 @@ private fun OpeningsScreen(
                     },
                 ),
                 enabled = ready,
+                itemHeight = 48.dp,
             )
         }
-        Section(tr("Sunroof")) {
+        CompactSection(tr("Sunroof")) {
             ActionBoxGrid(
                 actions = listOf(
                     ActionSpec(tr("Open"), Icons.Outlined.Window) {
@@ -1376,9 +1484,10 @@ private fun OpeningsScreen(
                     },
                 ),
                 enabled = ready,
+                itemHeight = 48.dp,
             )
         }
-        Section(tr("Mirrors")) {
+        CompactSection(tr("Mirrors")) {
             ActionBoxGrid(
                 actions = listOf(
                     ActionSpec(tr("Fold"), Icons.Outlined.DirectionsCar) {
@@ -1389,6 +1498,7 @@ private fun OpeningsScreen(
                     },
                 ),
                 enabled = ready,
+                itemHeight = 48.dp,
             )
         }
     }
@@ -1542,9 +1652,12 @@ private fun NavigationHistoryScreen(
     onSendNavigationText: (String) -> Unit,
     onDelete: (Long) -> Unit,
     onClearAll: () -> Unit,
+    onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     var confirmClear by remember { mutableStateOf(false) }
+    var pendingDelete by remember { mutableStateOf<NavigationHistoryEntry?>(null) }
+    val context = LocalContext.current
     if (confirmClear) {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
@@ -1563,6 +1676,24 @@ private fun NavigationHistoryScreen(
             },
         )
     }
+    pendingDelete?.let { entry ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text(tr("Delete shared link?")) },
+            text = { Text("${tr("Remove this destination from history?")}\n${entry.title}") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingDelete = null
+                        onDelete(entry.id)
+                    },
+                ) { Text(tr("Delete")) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text(tr("Cancel")) }
+            },
+        )
+    }
     LazyColumn(
         modifier = modifier,
         contentPadding = PaddingValues(20.dp),
@@ -1570,6 +1701,12 @@ private fun NavigationHistoryScreen(
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                if (onBack != null) {
+                    ExpressiveIconButton(onClick = onBack) {
+                        Icon(Icons.Outlined.Close, contentDescription = tr("Back"))
+                    }
+                    Spacer(Modifier.width(8.dp))
+                }
                 Column(Modifier.weight(1f)) {
                     Text(tr("Shared links"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text(
@@ -1610,8 +1747,9 @@ private fun NavigationHistoryScreen(
             items(state.navigationHistory, key = { it.id }) { entry ->
                 NavigationHistoryRow(
                     entry = entry,
+                    onOpenOriginal = { openOriginalShare(context, entry) },
                     onResend = { onSendNavigationText(entry.originalText) },
-                    onDelete = { onDelete(entry.id) },
+                    onDelete = { pendingDelete = entry },
                 )
             }
         }
@@ -1621,10 +1759,15 @@ private fun NavigationHistoryScreen(
 @Composable
 private fun NavigationHistoryRow(
     entry: NavigationHistoryEntry,
+    onOpenOriginal: () -> Unit,
     onResend: () -> Unit,
     onDelete: () -> Unit,
 ) {
     Surface(
+        modifier = Modifier.clickable(
+            enabled = entry.openableUri() != null,
+            onClick = onOpenOriginal,
+        ),
         shape = RoundedCornerShape(22.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.26f)),
@@ -1651,6 +1794,15 @@ private fun NavigationHistoryRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                entry.previewText?.let { preview ->
+                    Text(
+                        preview,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
                 Text(
                     formatTimeAgo(entry.sentAtMillis),
                     style = MaterialTheme.typography.labelSmall,
@@ -1690,6 +1842,7 @@ private fun SettingsScreen(
     onDownloadUpdate: (AppUpdateInfo) -> Unit,
     onShareLog: () -> Unit,
     onDisconnect: () -> Unit,
+    onDemoModeChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var advancedExpanded by rememberSaveable { mutableStateOf(false) }
@@ -1816,6 +1969,21 @@ private fun SettingsScreen(
                     selected = state.appTheme,
                     onTheme = onAppThemeChanged,
                 )
+            }
+        }
+        item {
+            Section(tr("Demo mode")) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.weight(1f)) {
+                        Text(if (state.demoMode) tr("Demo mode is active") else tr("Try the app without the car"))
+                        Text(
+                            tr("Use simulated vehicle data for app review or testing. No commands are sent to the car."),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = state.demoMode, onCheckedChange = onDemoModeChanged)
+                }
             }
         }
         item {
@@ -2188,6 +2356,7 @@ private fun ActionBoxGrid(
     enabled: Boolean,
     columns: Int = 2,
     fullWidthLastSingle: Boolean = false,
+    itemHeight: Dp = 68.dp,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         actions.chunked(columns).forEach { rowActions ->
@@ -2198,9 +2367,9 @@ private fun ActionBoxGrid(
                         selected = false,
                         onClick = action.onClick,
                         modifier = if (fullWidthLastSingle && rowActions.size == 1) {
-                            Modifier.fillMaxWidth().height(68.dp)
+                            Modifier.fillMaxWidth().height(itemHeight)
                         } else {
-                            Modifier.weight(1f).height(68.dp)
+                            Modifier.weight(1f).height(itemHeight)
                         },
                     ) {
                         Row(
@@ -2283,6 +2452,36 @@ private fun Section(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(13.dp),
+                content = content,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CompactSection(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 1,
+        )
+        Surface(
+            shape = RoundedCornerShape(22.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            tonalElevation = 3.dp,
+            shadowElevation = 2.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(9.dp),
                 content = content,
             )
         }
@@ -2981,6 +3180,19 @@ private fun formatTimeAgo(value: Long): String =
 private fun formatChargeMode(value: String?): String? =
     value?.uppercase()?.replace('_', ' ')
 
+private fun NavigationHistoryEntry.openableUri(): String? =
+    originalLink ?: NavigationShareParser.firstShareUri(originalText)
+
+private fun openOriginalShare(context: Context, entry: NavigationHistoryEntry): Boolean {
+    val target = entry.openableUri() ?: return false
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(target))
+    if (context !is Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    return runCatching {
+        context.startActivity(intent)
+        true
+    }.getOrDefault(false)
+}
+
 private fun demoTelemetry(): VehicleTelemetry =
     VehicleTelemetry(
         lockState = 1,
@@ -3059,6 +3271,7 @@ private val ArabicTranslations = mapOf(
     "Confirm command" to "تأكيد الأمر",
     "Send" to "إرسال",
     "Cancel" to "إلغاء",
+    "Back" to "رجوع",
     "Bluetooth permission required" to "يلزم إذن البلوتوث",
     "G700 Remote scans for the DisplayMirror BLE service and can also discover DisplayMirror over LAN." to "يبحث G700 Remote عن خدمة DisplayMirror عبر البلوتوث ويمكنه اكتشافها عبر الشبكة المحلية.",
     "Grant permissions" to "منح الأذونات",
@@ -3085,6 +3298,9 @@ private val ArabicTranslations = mapOf(
     "Try demo mode" to "تجربة الوضع التجريبي",
     "Demo mode" to "وضع تجريبي",
     "Demo mode only. No command was sent to the car." to "الوضع التجريبي فقط. لم يتم إرسال أي أمر للسيارة.",
+    "Demo mode is active" to "الوضع التجريبي مفعل",
+    "Try the app without the car" to "جرّب التطبيق بدون السيارة",
+    "Use simulated vehicle data for app review or testing. No commands are sent to the car." to "استخدم بيانات سيارة افتراضية للمراجعة أو الاختبار. لن يتم إرسال أي أوامر إلى السيارة.",
     "Unnamed DisplayMirror device" to "جهاز DisplayMirror بدون اسم",
     "Unnamed" to "بدون اسم",
     "No paired device" to "لا يوجد جهاز مقترن",
@@ -3116,6 +3332,7 @@ private val ArabicTranslations = mapOf(
     "AC" to "المكيّف",
     "Air" to "الهواء",
     "Air conditioner" to "تشغيل المكيّف",
+    "A/C" to "A/C",
     "Aux AC controls" to "تحكم المكيّف الإضافي",
     "A/C compressor" to "كمبروسر المكيّف",
     "Left" to "اليسار",
@@ -3248,9 +3465,18 @@ private val ArabicTranslations = mapOf(
     "Checks GitHub releases for signed APK updates twice daily." to "يفحص إصدارات GitHub مرتين يومياً لتحديثات APK الموقعة.",
     "Links" to "الروابط",
     "Locations shared to the car can be resent from here." to "يمكن إعادة إرسال المواقع التي تمت مشاركتها مع السيارة من هنا.",
+    "Sent to car" to "تم الإرسال للسيارة",
+    "Saved for later" to "تم الحفظ لاحقاً",
+    "Location not sent" to "لم يتم إرسال الموقع",
+    "The destination was sent to DisplayMirror and saved in Shared links." to "تم إرسال الوجهة إلى DisplayMirror وحفظها في الروابط المرسلة.",
+    "The destination is saved in Shared links so you can resend it later." to "تم حفظ الوجهة في الروابط المرسلة لتتمكن من إعادة إرسالها لاحقاً.",
+    "G700 Remote could not read a destination from this share." to "لم يتمكن G700 Remote من قراءة وجهة من هذه المشاركة.",
+    "Done" to "تم",
     "Clear shared links?" to "مسح الروابط المرسلة؟",
     "This removes all saved shared-location history from this phone." to "سيتم حذف سجل المواقع المرسلة المحفوظ على هذا الهاتف.",
     "Clear all" to "مسح الكل",
+    "Delete shared link?" to "حذف الرابط المرسل؟",
+    "Remove this destination from history?" to "هل تريد حذف هذه الوجهة من السجل؟",
     "History" to "السجل",
     "No shared links yet" to "لا توجد روابط مرسلة بعد",
     "Share a Google Maps place or geo link to G700 Remote." to "شارك موقعاً من خرائط Google أو رابط geo إلى G700 Remote.",
