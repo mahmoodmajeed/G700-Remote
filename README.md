@@ -2,13 +2,13 @@
 
 G700 Remote is a Kotlin Android companion app for Jetour G700 head units running the open-source DisplayMirror app. It connects to DisplayMirror's remote-access protocol over Bluetooth LE or LAN/mDNS and provides a focused phone remote for lock/unlock, climate, openings, lighting, charging, and vehicle telemetry that DisplayMirror exposes.
 
-This repository started from the v1.2 baseline and now tracks the v1.4.5 release. It is intended as the clean source baseline for future development, CI, Play Store preparation, and Codex-assisted changes.
+This repository started from the v1.2 baseline and now tracks the v1.4.6 release. It is intended as the clean source baseline for future development, CI, Play Store preparation, and Codex-assisted changes.
 
 ## Status
 
-- App version: `1.4.5`
+- App version: `1.4.6`
 - Android package: `com.mmy.g700remote`
-- `versionCode`: `9`
+- `versionCode`: `11`
 - Minimum Android: API 30
 - Target/compile SDK: API 36
 - UI: Jetpack Compose Material 3 with an expressive spring-motion surface system
@@ -46,6 +46,7 @@ For implementation details, see [docs/DISPLAYMIRROR_COMPATIBILITY.md](docs/DISPL
 
 - First-time setup with pairing-code entry, a link to DisplayMirror, and a demo mode for review/testing without a paired car.
 - Material 3 Expressive-inspired UI with responsive spring press motion, larger tactile surfaces, and a Jetour-branded header.
+- v1.4.6 improves Lighting readability with vertical actions and makes Android back return to Home before exiting.
 - v1.4.5 shared-link history resend now uses the stored navigation command directly, while tapping the saved link still opens the original location on the phone.
 - v1.4.4 shared-link loading feedback, quieter connection notifications, and a smart header action that connects when offline and refreshes when connected.
 - Dark/light appearance setting, defaulting to dark mode on first install, plus professional G700-inspired color themes.

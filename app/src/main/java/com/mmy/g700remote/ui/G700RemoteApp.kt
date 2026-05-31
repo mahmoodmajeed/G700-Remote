@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -897,6 +898,9 @@ private fun MainRemoteScaffold(
     contentPadding: PaddingValues,
 ) {
     var tab by rememberSaveable { mutableStateOf(AppTab.Home) }
+    BackHandler(enabled = tab != AppTab.Home) {
+        tab = AppTab.Home
+    }
     LaunchedEffect(showUpdates) {
         if (showUpdates) {
             tab = AppTab.Settings
@@ -1723,6 +1727,7 @@ private fun LightingScreen(
                     ),
                 ),
                 enabled = ready,
+                columns = 1,
             )
         }
     }
