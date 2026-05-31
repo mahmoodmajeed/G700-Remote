@@ -69,6 +69,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -190,7 +191,9 @@ fun G700RemoteApp(
     var demoTelemetry by remember { mutableStateOf(demoTelemetry()) }
     var requestedTab by remember { mutableStateOf<AppTab?>(null) }
     var navigationShareResult by remember { mutableStateOf<NavigationShareResult?>(null) }
+    var navigationShareInProgress by remember { mutableStateOf(false) }
     var showStandaloneHistory by rememberSaveable { mutableStateOf(false) }
+    var wasRecentlyConnected by remember { mutableStateOf(false) }
 
     fun submit(command: RemoteCommand) {
         if (demoMode) {
@@ -212,6 +215,16 @@ fun G700RemoteApp(
             )
         } else {
             pendingConfirmation = command
+        }
+    }
+
+    fun sendNavigationText(text: String) {
+        navigationShareInProgress = true
+        viewModel.sendSharedNavigation(text) { result ->
+            scope.launch {
+                navigationShareInProgress = false
+                navigationShareResult = result
+            }
         }
     }
 
@@ -263,9 +276,31 @@ fun G700RemoteApp(
                     },
                 )
             }
+            if (navigationShareInProgress) {
+                NavigationShareProgressDialog()
+            }
+
+    LaunchedEffect(state.connectionState) {
+        when (state.connectionState) {
+            is RemoteConnectionState.Ready -> wasRecentlyConnected = true
+            RemoteConnectionState.Disconnected,
+            is RemoteConnectionState.Error,
+            -> {
+                if (wasRecentlyConnected) {
+                    wasRecentlyConnected = false
+                    snackbarHostState.showSnackbar(translate(language, "DisplayMirror disconnected"))
+                }
+            }
+            else -> Unit
+        }
+    }
 
     LaunchedEffect(state.lastError) {
-        state.lastError?.let { snackbarHostState.showSnackbar(it) }
+        state.lastError?.let { message ->
+            if (!message.isRoutineConnectionNotice()) {
+                snackbarHostState.showSnackbar(message)
+            }
+        }
     }
 
     LaunchedEffect(state.lastNavigationStatus) {
@@ -282,9 +317,7 @@ fun G700RemoteApp(
     LaunchedEffect(sharedNavigationText) {
         val text = sharedNavigationText
         if (!text.isNullOrBlank()) {
-            viewModel.sendSharedNavigation(text) { result ->
-                scope.launch { navigationShareResult = result }
-            }
+            sendNavigationText(text)
             onSharedNavigationConsumed()
         }
     }
@@ -321,11 +354,7 @@ fun G700RemoteApp(
         } else if (showStandaloneHistory && !demoMode && state.pairedDevice == null) {
             NavigationHistoryScreen(
                 state = state,
-                onSendNavigationText = { text ->
-                    viewModel.sendSharedNavigation(text) { result ->
-                        scope.launch { navigationShareResult = result }
-                    }
-                },
+                onSendNavigationText = ::sendNavigationText,
                 onDelete = viewModel::deleteNavigationHistory,
                 onClearAll = viewModel::clearNavigationHistory,
                 onBack = { showStandaloneHistory = false },
@@ -356,11 +385,7 @@ fun G700RemoteApp(
                 onDownloadUpdate = { viewModel.downloadAndInstallUpdate(activity, it) },
                 onRefresh = { scope.launch { snackbarHostState.showSnackbar(translate(language, "Demo mode only. No command was sent to the car.")) } },
                 onShareLog = { onShareLog(viewModel.exportLogText()) },
-                onSendNavigationText = { text ->
-                    viewModel.sendSharedNavigation(text) { result ->
-                        scope.launch { navigationShareResult = result }
-                    }
-                },
+                onSendNavigationText = ::sendNavigationText,
                 onDeleteNavigationHistory = viewModel::deleteNavigationHistory,
                 onClearNavigationHistory = viewModel::clearNavigationHistory,
                 onDemoModeChanged = { enabled -> demoMode = enabled },
@@ -412,11 +437,7 @@ fun G700RemoteApp(
                 onDownloadUpdate = { viewModel.downloadAndInstallUpdate(activity, it) },
                 onRefresh = viewModel::refreshNow,
                 onShareLog = { onShareLog(viewModel.exportLogText()) },
-                onSendNavigationText = { text ->
-                    viewModel.sendSharedNavigation(text) { result ->
-                        scope.launch { navigationShareResult = result }
-                    }
-                },
+                onSendNavigationText = ::sendNavigationText,
                 onDeleteNavigationHistory = viewModel::deleteNavigationHistory,
                 onClearNavigationHistory = viewModel::clearNavigationHistory,
                 onDemoModeChanged = { enabled ->
@@ -504,6 +525,35 @@ private fun NavigationShareResultDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) { Text(tr("Done")) }
         },
+    )
+}
+
+@Composable
+private fun NavigationShareProgressDialog() {
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text(tr("Preparing location")) },
+        text = {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                Column {
+                    Text(
+                        tr("Reading link details"),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        tr("Short Google Maps links can take a few seconds."),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
+        confirmButton = {},
     )
 }
 
@@ -845,6 +895,7 @@ private fun MainRemoteScaffold(
             ConnectionHeader(
                 state = state,
                 onHome = { tab = AppTab.Home },
+                onReconnect = onReconnect,
                 onRefresh = onRefresh,
                 onOpenHistory = { tab = AppTab.NavigationHistory },
                 onOpenSettings = { tab = AppTab.Settings },
@@ -907,10 +958,17 @@ private fun MainRemoteScaffold(
 private fun ConnectionHeader(
     state: RemoteUiState,
     onHome: () -> Unit,
+    onReconnect: () -> Unit,
     onRefresh: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
+    val isReady = state.connectionState is RemoteConnectionState.Ready
+    val isConnecting = state.connectionState is RemoteConnectionState.Connecting ||
+        state.connectionState == RemoteConnectionState.DiscoveringServices ||
+        state.connectionState == RemoteConnectionState.EnablingNotifications ||
+        state.connectionState == RemoteConnectionState.Handshaking ||
+        state.connectionState == RemoteConnectionState.Scanning
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
         tonalElevation = 3.dp,
@@ -956,10 +1014,13 @@ private fun ConnectionHeader(
                     Icon(Icons.Outlined.Link, contentDescription = tr("Shared links"))
                 }
                 ExpressiveIconButton(
-                    onClick = onRefresh,
-                    enabled = state.connectionState is RemoteConnectionState.Ready,
+                    onClick = if (isReady) onRefresh else onReconnect,
+                    enabled = !isConnecting && state.pairedDevice != null,
                 ) {
-                    Icon(Icons.Outlined.Refresh, contentDescription = tr("Refresh status"))
+                    Icon(
+                        if (isReady) Icons.Outlined.Refresh else Icons.Outlined.BluetoothSearching,
+                        contentDescription = if (isReady) tr("Refresh status") else tr("Connect"),
+                    )
                 }
                 ExpressiveIconButton(onClick = onOpenSettings) {
                     Icon(Icons.Outlined.Settings, contentDescription = tr("Settings"))
@@ -1972,21 +2033,6 @@ private fun SettingsScreen(
             }
         }
         item {
-            Section(tr("Demo mode")) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.weight(1f)) {
-                        Text(if (state.demoMode) tr("Demo mode is active") else tr("Try the app without the car"))
-                        Text(
-                            tr("Use simulated vehicle data for app review or testing. No commands are sent to the car."),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(checked = state.demoMode, onCheckedChange = onDemoModeChanged)
-                }
-            }
-        }
-        item {
             Section(tr("Security")) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.weight(1f)) {
@@ -2119,6 +2165,37 @@ private fun SettingsScreen(
                         Icon(Icons.Outlined.Share, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                         Text(tr("Export redacted protocol log"))
+                    }
+                }
+            }
+        }
+        item {
+            Section(tr("Demo mode")) {
+                Text(
+                    tr("Use this to test app functions when no car is connected. No commands are sent to the car."),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(10.dp))
+                if (state.demoMode) {
+                    Button(
+                        onClick = { onDemoModeChanged(false) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(22.dp),
+                    ) {
+                        Icon(Icons.Outlined.PowerSettingsNew, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(tr("Disable demo mode"))
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = { onDemoModeChanged(true) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(22.dp),
+                    ) {
+                        Icon(Icons.Outlined.PlayArrow, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(tr("Enable demo mode"))
                     }
                 }
             }
@@ -3180,6 +3257,24 @@ private fun formatTimeAgo(value: Long): String =
 private fun formatChargeMode(value: String?): String? =
     value?.uppercase()?.replace('_', ' ')
 
+private fun String.isRoutineConnectionNotice(): Boolean {
+    val normalized = lowercase(Locale.US)
+    return listOf(
+        "no displaymirror device is paired",
+        "not connected to displaymirror",
+        "connection failed",
+        "disconnected",
+        "ble disconnected",
+        "bluetooth is off",
+        "bluetooth permissions",
+        "lan",
+        "timeout",
+        "timed out",
+        "unable to connect",
+        "no destination found in shared text",
+    ).any { normalized.contains(it) }
+}
+
 private fun NavigationHistoryEntry.openableUri(): String? =
     originalLink ?: NavigationShareParser.firstShareUri(originalText)
 
@@ -3272,6 +3367,8 @@ private val ArabicTranslations = mapOf(
     "Send" to "إرسال",
     "Cancel" to "إلغاء",
     "Back" to "رجوع",
+    "Connect" to "اتصال",
+    "DisplayMirror disconnected" to "انقطع الاتصال مع DisplayMirror",
     "Bluetooth permission required" to "يلزم إذن البلوتوث",
     "G700 Remote scans for the DisplayMirror BLE service and can also discover DisplayMirror over LAN." to "يبحث G700 Remote عن خدمة DisplayMirror عبر البلوتوث ويمكنه اكتشافها عبر الشبكة المحلية.",
     "Grant permissions" to "منح الأذونات",
@@ -3301,6 +3398,9 @@ private val ArabicTranslations = mapOf(
     "Demo mode is active" to "الوضع التجريبي مفعل",
     "Try the app without the car" to "جرّب التطبيق بدون السيارة",
     "Use simulated vehicle data for app review or testing. No commands are sent to the car." to "استخدم بيانات سيارة افتراضية للمراجعة أو الاختبار. لن يتم إرسال أي أوامر إلى السيارة.",
+    "Use this to test app functions when no car is connected. No commands are sent to the car." to "استخدم هذا الوضع لاختبار وظائف التطبيق عند عدم اتصال السيارة. لن يتم إرسال أي أوامر إلى السيارة.",
+    "Enable demo mode" to "تفعيل الوضع التجريبي",
+    "Disable demo mode" to "إيقاف الوضع التجريبي",
     "Unnamed DisplayMirror device" to "جهاز DisplayMirror بدون اسم",
     "Unnamed" to "بدون اسم",
     "No paired device" to "لا يوجد جهاز مقترن",
@@ -3468,6 +3568,9 @@ private val ArabicTranslations = mapOf(
     "Sent to car" to "تم الإرسال للسيارة",
     "Saved for later" to "تم الحفظ لاحقاً",
     "Location not sent" to "لم يتم إرسال الموقع",
+    "Preparing location" to "جاري تجهيز الموقع",
+    "Reading link details" to "جاري قراءة تفاصيل الرابط",
+    "Short Google Maps links can take a few seconds." to "روابط خرائط Google المختصرة قد تستغرق بضع ثوانٍ.",
     "The destination was sent to DisplayMirror and saved in Shared links." to "تم إرسال الوجهة إلى DisplayMirror وحفظها في الروابط المرسلة.",
     "The destination is saved in Shared links so you can resend it later." to "تم حفظ الوجهة في الروابط المرسلة لتتمكن من إعادة إرسالها لاحقاً.",
     "G700 Remote could not read a destination from this share." to "لم يتمكن G700 Remote من قراءة وجهة من هذه المشاركة.",
