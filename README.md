@@ -46,6 +46,7 @@ For implementation details, see [docs/DISPLAYMIRROR_COMPATIBILITY.md](docs/DISPL
 
 - First-time setup with pairing-code entry, a link to DisplayMirror, and a demo mode for review/testing without a paired car.
 - Material 3 Expressive-inspired UI with responsive spring press motion, larger tactile surfaces, and a Jetour-branded header.
+- v1.4.7 sends only resolved map coordinates or clean place text to DisplayMirror, prevents unsupported remote HVAC-off behavior, and keeps Arabic temperature values left-to-right.
 - v1.4.6 improves Lighting readability with vertical actions and makes Android back return to Home before exiting.
 - v1.4.5 shared-link history resend now uses the stored navigation command directly, while tapping the saved link still opens the original location on the phone.
 - v1.4.4 shared-link loading feedback, quieter connection notifications, and a smart header action that connects when offline and refreshes when connected.
@@ -73,8 +74,8 @@ For implementation details, see [docs/DISPLAYMIRROR_COMPATIBILITY.md](docs/DISPL
 - The "car left running after walking away" background notification is intentionally not implemented because the inspected DisplayMirror remote protocol does not expose a reliable remote ignition/power mode.
 - Rear/ceiling screen controls are intentionally absent because the inspected DisplayMirror remote protocol does not expose those commands.
 - Hazards, DRL, and mirror commands can be sent, but DisplayMirror does not currently return confirmed live status for those fields in the general remote status payload.
-- Remote DisplayMirror protocol v4 exposes compressor `ac_on`/`ac_off`, not a full HVAC power command. G700 Remote uses fan speed `0` for cabin air off and restores a low fan speed for cabin air on, while compressor control stays separate.
-- Auto climate mode and auto defrost controls are intentionally hidden until DisplayMirror exposes reliable remote behavior for them.
+- Remote DisplayMirror protocol v4 exposes compressor `ac_on`/`ac_off`, not a full HVAC power command. G700 Remote can start cabin airflow with a moderate fan speed, but remote HVAC-off is blocked with a user message because the reviewed DisplayMirror source does not expose that action.
+- Auto climate mode is not exposed by the reviewed DisplayMirror remote protocol. Auto defrost is shown as a returned/toggleable DisplayMirror mode, but it should still be validated on the vehicle because it depends on head-unit behavior.
 - Android does not allow silent APK installation for normal apps. The updater downloads the signed APK and opens the Android package installer after the user grants install-from-this-source permission.
 - Values are displayed only when returned by DisplayMirror. Missing fields remain unknown instead of being faked.
 - Lock-state semantics may need real vehicle calibration if DisplayMirror or the head unit changes the returned mapping.

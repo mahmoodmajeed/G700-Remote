@@ -162,6 +162,7 @@ import kotlinx.coroutines.launch
 
 private val LocalAppLanguage = staticCompositionLocalOf { AppLanguage.English }
 private const val DISPLAY_MIRROR_PROJECT_URL = "https://github.com/Baghdady92/DisplayMirror"
+private const val AIRCON_START_FAN_SPEED = 3
 
 @Composable
 private fun tr(text: String): String = translate(LocalAppLanguage.current, text)
@@ -195,6 +196,10 @@ fun G700RemoteApp(
     var navigationShareInProgress by remember { mutableStateOf(false) }
     var showStandaloneHistory by rememberSaveable { mutableStateOf(false) }
     var wasRecentlyConnected by remember { mutableStateOf(false) }
+
+    fun showUserNotice(message: String) {
+        scope.launch { snackbarHostState.showSnackbar(translate(language, message)) }
+    }
 
     fun submit(command: RemoteCommand) {
         if (demoMode) {
@@ -411,6 +416,7 @@ fun G700RemoteApp(
                 onDeleteNavigationHistory = viewModel::deleteNavigationHistory,
                 onClearNavigationHistory = viewModel::clearNavigationHistory,
                 onDemoModeChanged = { enabled -> demoMode = enabled },
+                onUserNotice = ::showUserNotice,
                 showUpdates = showUpdates,
                 onUpdatesShown = onUpdatesShown,
                 requestedTab = requestedTab,
@@ -466,6 +472,7 @@ fun G700RemoteApp(
                     if (enabled) demoTelemetry = demoTelemetry()
                     demoMode = enabled
                 },
+                onUserNotice = ::showUserNotice,
                 showUpdates = showUpdates,
                 onUpdatesShown = onUpdatesShown,
                 requestedTab = requestedTab,
@@ -891,6 +898,7 @@ private fun MainRemoteScaffold(
     onDeleteNavigationHistory: (Long) -> Unit,
     onClearNavigationHistory: () -> Unit,
     onDemoModeChanged: (Boolean) -> Unit,
+    onUserNotice: (String) -> Unit,
     showUpdates: Boolean,
     onUpdatesShown: () -> Unit,
     requestedTab: AppTab?,
@@ -938,8 +946,8 @@ private fun MainRemoteScaffold(
             .background(MaterialTheme.colorScheme.background)
             .padding(padding)
         when (tab) {
-            AppTab.Home -> HomeScreen(state, onCommand, modifier)
-            AppTab.Climate -> ClimateScreen(state, onCommand, modifier)
+            AppTab.Home -> HomeScreen(state, onCommand, onUserNotice, modifier)
+            AppTab.Climate -> ClimateScreen(state, onCommand, onUserNotice, modifier)
             AppTab.Openings -> OpeningsScreen(state, onCommand, modifier)
             AppTab.Charging -> ChargingScreen(state, onCommand, modifier)
             AppTab.Lighting -> LightingScreen(state, onCommand, modifier)
@@ -1297,6 +1305,7 @@ private fun NavPillItem(
 private fun HomeScreen(
     state: RemoteUiState,
     onCommand: (RemoteCommand) -> Unit,
+    onUserNotice: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val ready = state.connectionState is RemoteConnectionState.Ready
@@ -1357,8 +1366,8 @@ private fun HomeScreen(
                             label = tr("Air conditioner"),
                             icon = Icons.Outlined.AcUnit,
                             checked = airOn,
-                            onOn = { onCommand(RemoteCommand.Climate(ClimateAction.SetFanSpeed, numericValue = 3)) },
-                            onOff = { onCommand(RemoteCommand.Climate(ClimateAction.SetFanSpeed, numericValue = 0)) },
+                            onOn = { requestCabinAirToggle(state, onCommand, onUserNotice) },
+                            onOff = { requestCabinAirToggle(state, onCommand, onUserNotice) },
                         ),
                         ToggleSpec(
                             label = tr("Hazards"),
@@ -1379,6 +1388,7 @@ private fun HomeScreen(
 private fun ClimateScreen(
     state: RemoteUiState,
     onCommand: (RemoteCommand) -> Unit,
+    onUserNotice: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val ready = state.connectionState is RemoteConnectionState.Ready
@@ -1397,8 +1407,8 @@ private fun ClimateScreen(
                             label = tr("Air conditioner"),
                             icon = Icons.Outlined.AcUnit,
                             checked = airOn,
-                            onOn = { onCommand(RemoteCommand.Climate(ClimateAction.SetFanSpeed, numericValue = 3)) },
-                            onOff = { onCommand(RemoteCommand.Climate(ClimateAction.SetFanSpeed, numericValue = 0)) },
+                            onOn = { requestCabinAirToggle(state, onCommand, onUserNotice) },
+                            onOff = { requestCabinAirToggle(state, onCommand, onUserNotice) },
                         ),
                         enabled = ready,
                         modifier = Modifier.weight(2f),
@@ -1411,7 +1421,7 @@ private fun ClimateScreen(
                             onOn = { onCommand(RemoteCommand.Climate(ClimateAction.AcOn)) },
                             onOff = { onCommand(RemoteCommand.Climate(ClimateAction.AcOff)) },
                         ),
-                        enabled = ready,
+                        enabled = ready && airOn == true,
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -1460,6 +1470,9 @@ private fun ClimateScreen(
                         ToggleSpec(tr("Front glass heat"), Icons.Outlined.Window, null,
                             onOn = { onCommand(RemoteCommand.Climate(ClimateAction.FrontHeatOn)) },
                             onOff = { onCommand(RemoteCommand.Climate(ClimateAction.FrontHeatOff)) }),
+                        ToggleSpec(tr("Auto defrost"), Icons.Outlined.AcUnit, telemetry.autoDefrost,
+                            onOn = { onCommand(RemoteCommand.Climate(ClimateAction.AutoDefrostOn)) },
+                            onOff = { onCommand(RemoteCommand.Climate(ClimateAction.AutoDefrostOff)) }),
                     ) + if (state.regionalFeaturesEnabled) {
                         listOf(
                             ToggleSpec(tr("PM2.5 filter"), Icons.Outlined.Air, null,
@@ -2301,12 +2314,14 @@ private fun TemperatureControlCard(
         ) {
             Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(4.dp))
-            Text(
-                formatTemp(value),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = if (enabled) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Text(
+                    formatTemp(value),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (enabled) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 Button(
@@ -3182,7 +3197,13 @@ private fun MetricTile(
             }
             Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(2.dp))
-            Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (value.contains("°C")) {
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            } else {
+                Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }
@@ -3274,6 +3295,19 @@ private fun lockLabel(state: RemoteUiState): String {
 
 private fun isLocked(state: RemoteUiState): Boolean? =
     state.telemetry.lockState?.let { it == 1 }
+
+private fun requestCabinAirToggle(
+    state: RemoteUiState,
+    onCommand: (RemoteCommand) -> Unit,
+    onUserNotice: (String) -> Unit,
+) {
+    val fanSpeed = state.telemetry.fanSpeed
+    if (fanSpeed == null || fanSpeed <= 0) {
+        onCommand(RemoteCommand.Climate(ClimateAction.SetFanSpeed, numericValue = AIRCON_START_FAN_SPEED))
+    } else {
+        onUserNotice("Turning off air conditioning is not supported remotely. Please turn it off from the car.")
+    }
+}
 
 private fun formatTemp(value: Double): String = "%.1f °C".format(value)
 
@@ -3458,6 +3492,7 @@ private val ArabicTranslations = mapOf(
     "AC" to "المكيّف",
     "Air" to "الهواء",
     "Air conditioner" to "تشغيل المكيّف",
+    "Turning off air conditioning is not supported remotely. Please turn it off from the car." to "إيقاف المكيّف غير مدعوم عن بعد حالياً. أوقفه من شاشة السيارة.",
     "A/C" to "A/C",
     "Aux AC controls" to "تحكم المكيّف الإضافي",
     "A/C compressor" to "كمبروسر المكيّف",

@@ -710,7 +710,10 @@ class RemoteRepository(
         withContext(Dispatchers.IO) {
             val url = NavigationShareParser.firstUrl(text) ?: return@withContext text
             if (!NavigationShareParser.isGoogleMapsUrl(url)) return@withContext text
-            runCatching { followRedirects(url) }.getOrDefault(text)
+            runCatching {
+                val resolved = followRedirects(url)
+                if (resolved != url) "$text\n$resolved" else text
+            }.getOrDefault(text)
         }
 
     private fun followRedirects(url: String): String {
@@ -729,13 +732,30 @@ class RemoteRepository(
                     val location = connection.getHeaderField("Location") ?: return current
                     current = URL(URL(current), location).toString()
                 } else {
-                    return connection.url.toString()
+                    val finalUrl = connection.url.toString()
+                    val htmlResolved = runCatching {
+                        connection.inputStream.bufferedReader().use { it.readText().take(200_000) }
+                    }.getOrNull()
+                        ?.let(::extractGoogleMapsUrl)
+                    return htmlResolved ?: finalUrl
                 }
             } finally {
                 connection.disconnect()
             }
         }
         return current
+    }
+
+    private fun extractGoogleMapsUrl(html: String): String? {
+        val unescaped = html
+            .replace("\\u003d", "=")
+            .replace("\\u0026", "&")
+            .replace("\\/", "/")
+            .replace("&amp;", "&")
+        return Regex("""https://(?:www\.)?google\.[^"'<>\\]+/maps/[^"'<>\\]+""", RegexOption.IGNORE_CASE)
+            .find(unescaped)
+            ?.value
+            ?.trimEnd('.', ',', ';', ')', ']', '}')
     }
 
     private fun echoClimate(update: (VehicleTelemetry) -> VehicleTelemetry) {

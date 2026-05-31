@@ -91,11 +91,11 @@ DisplayMirror has internal vehicle fields beyond this list, but the app only exp
 
 ## v1.4.x Notes
 
-- Google Maps shares may arrive as long URLs, short `maps.app.goo.gl` URLs, `/@lat,lon` paths, or embedded `!3d...!4d...` data. The phone app resolves redirects and extracts coordinates before sending `navigate`, so the head unit receives a clean location instead of a raw Google URL.
+- Google Maps shares may arrive as long URLs, short `maps.app.goo.gl` URLs, `/@lat,lon` paths, or embedded `!3d...!4d...` data. The phone app resolves redirects and extracts coordinates before sending `navigate`; unresolved Google short links are not forwarded as raw search text because Google Maps on the head unit treats them as an invalid destination query.
 - Shared destinations are stored locally for resend/delete history. The history is phone-local and not synced.
-- DisplayMirror protocol v4 exposes `climate` `ac_on` and `ac_off`, but the reviewed source maps that to the A/C compressor state. The phone app therefore treats cabin air on/off as fan speed control (`0` for off, a low fan speed for on) and keeps compressor control separate.
+- DisplayMirror protocol v4 exposes `climate` `ac_on` and `ac_off`, but the reviewed source maps that to the A/C compressor state. The reviewed remote handler does not expose `setHvacOff()`. The phone app therefore treats cabin air as start-only from the phone by setting a moderate fan speed and keeps compressor control separate.
 - No remote Auto climate command was found in the reviewed DisplayMirror protocol. Auto mode is not exposed by the phone app.
-- Auto defrost is hidden because the returned state was not reliable enough for end-user control.
+- Auto defrost uses DisplayMirror's `auto_defrost_on` / `auto_defrost_off` actions and returned `autoDefrost` state. Validate behavior against the vehicle because this state is sourced from the head-unit app.
 
 ## Intentionally Excluded
 
@@ -108,7 +108,7 @@ The inspected DisplayMirror source did not provide a reliable remote surface for
 - gear
 - steering angle
 - live hazards, DRL, or mirror status in the general status payload
-- full HVAC power command separate from fan speed
+- full HVAC-off command through the remote protocol
 - Auto climate mode command
 - park keep-alive / head-unit awake controls
 

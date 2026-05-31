@@ -51,7 +51,7 @@ Keep those enabled unless a specific compatibility issue is found.
 - Replace debug/test wording in screenshots and store copy.
 - Validate English and Arabic UI on small and large devices.
 - Validate demo mode from a clean install with no paired car. This is the safest Play Store review path because it does not send vehicle commands.
-- Validate shared Google Maps URLs, including `maps.app.goo.gl` short links, against a real DisplayMirror head unit.
+- Validate shared Google Maps URLs, including `maps.app.goo.gl` short links, against a real DisplayMirror head unit and confirm the car receives coordinates/place text rather than the raw short URL.
 - Test on a real phone and real DisplayMirror-equipped head unit before public release.
 - Decide whether Play Store distribution is appropriate for a vehicle-control companion that depends on a third-party head-unit app.
 - Prepare clear disclaimers: not OEM-certified, authorized use only, vehicle state depends on DisplayMirror responses.

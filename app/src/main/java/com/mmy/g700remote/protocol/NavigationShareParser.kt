@@ -8,6 +8,7 @@ object NavigationShareParser {
     private val coordinatePattern = Regex("""(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)""")
     private val googleDataCoordinatePattern = Regex("""!3d(-?\d{1,2}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)""")
     private val urlPattern = Regex("""https?://[^\s<>"']+""", RegexOption.IGNORE_CASE)
+    private val bareGoogleMapsUrlPattern = Regex("""\b(?:maps\.app\.goo\.gl|goo\.gl|(?:www\.)?google\.[a-z.]+/maps)[^\s<>"']*""", RegexOption.IGNORE_CASE)
     private val shareUriPattern = Regex("""\b(?:geo|google\.navigation):[^\s<>"']+""", RegexOption.IGNORE_CASE)
     private val googlePlacePathPattern = Regex("""/maps/(?:place|search)/([^/?#]+)""", RegexOption.IGNORE_CASE)
     private val googleQueryPattern = Regex("""[?&](?:query|q)=([^&#]+)""", RegexOption.IGNORE_CASE)
@@ -16,12 +17,14 @@ object NavigationShareParser {
         val cleaned = text?.trim().orEmpty()
         if (cleaned.isBlank()) return null
 
-        firstUrl(cleaned)?.let { url ->
-            parseGoogleDataCoordinates(url, googlePlaceName(url) ?: cleaned.lineSequence().firstOrNull()?.take(80))?.let { return it }
-            parseUri(url, fallbackLabel = cleaned.lineSequence().firstOrNull()?.take(80))?.let { return it }
+        val firstUrl = firstUrl(cleaned)
+        val fallbackLabel = firstReadableLine(cleaned)
+        firstUrl?.let { url ->
+            parseGoogleDataCoordinates(url, googlePlaceName(url) ?: fallbackLabel)?.let { return it }
+            parseUri(url, fallbackLabel = fallbackLabel)?.let { return it }
         }
         parseUri(cleaned)?.let { return it }
-        parseGoogleDataCoordinates(cleaned, googlePlaceName(cleaned) ?: cleaned.lineSequence().firstOrNull()?.take(80))?.let { return it }
+        parseGoogleDataCoordinates(cleaned, googlePlaceName(cleaned) ?: fallbackLabel)?.let { return it }
         coordinatePattern.find(cleaned)?.let { match ->
             val lat = match.groupValues[1].toDoubleOrNull()
             val lon = match.groupValues[2].toDoubleOrNull()
@@ -29,12 +32,18 @@ object NavigationShareParser {
                 return RemoteCommand.Navigate(lat = lat, lon = lon, label = cleaned.take(80))
             }
         }
+        if (firstUrl != null || shareUriPattern.containsMatchIn(cleaned)) {
+            return fallbackLabel?.let { RemoteCommand.Navigate(query = it.take(500)) }
+        }
         return RemoteCommand.Navigate(query = cleaned.take(500))
     }
 
     fun firstUrl(text: String): String? =
         urlPattern.find(text)?.value
             ?.trimEnd('.', ',', ';', ')', ']', '}')
+            ?: bareGoogleMapsUrlPattern.find(text)?.value
+                ?.trimEnd('.', ',', ';', ')', ']', '}')
+                ?.let { "https://$it" }
 
     fun firstShareUri(text: String): String? =
         firstUrl(text) ?: shareUriPattern.find(text)?.value
@@ -46,6 +55,7 @@ object NavigationShareParser {
             host == "goo.gl" ||
             host.endsWith("google.com") ||
             host.endsWith("google.com.bh") ||
+            host.matches(Regex("""(?:www\.)?google\.[a-z.]+""")) ||
             host.endsWith("googleusercontent.com")
     }
 
@@ -156,4 +166,18 @@ object NavigationShareParser {
                 !it.startsWith("http", ignoreCase = true)
         }
     }
+
+    private fun firstReadableLine(text: String): String? =
+        text.lineSequence()
+            .map { it.trim() }
+            .firstOrNull { line ->
+                line.isNotBlank() &&
+                    firstShareUri(line) == null &&
+                    !line.startsWith("data=", ignoreCase = true) &&
+                    !line.startsWith("@") &&
+                    !line.equals("shared location", ignoreCase = true) &&
+                    !line.equals("dropped pin", ignoreCase = true) &&
+                    !line.equals("google maps", ignoreCase = true)
+            }
+            ?.let { cleanPlaceLabel(it) ?: it.take(80) }
 }

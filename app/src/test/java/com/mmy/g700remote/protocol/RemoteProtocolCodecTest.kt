@@ -37,6 +37,10 @@ class RemoteProtocolCodecTest {
         assertEquals("start", race.getString("action"))
         assertEquals(85, race.getInt("target"))
 
+        val frontHeat = JSONObject(RemoteProtocolCodec.encodeCommand(RemoteCommand.Climate(ClimateAction.FrontHeatOn)))
+        assertEquals("climate", frontHeat.getString("cmd"))
+        assertEquals("front_heat_on", frontHeat.getString("action"))
+
         val navigate = JSONObject(RemoteProtocolCodec.encodeCommand(RemoteCommand.Navigate(lat = 26.2285, lon = 50.5860, label = "Bahrain")))
         assertEquals("navigate", navigate.getString("cmd"))
         assertEquals(26.2285, navigate.getDouble("lat"), 0.0)
@@ -99,6 +103,10 @@ class RemoteProtocolCodecTest {
         assertEquals(26.2491, sharedText?.lat ?: 0.0, 0.0)
         assertEquals(50.5864, sharedText?.lon ?: 0.0, 0.0)
 
+        val atCoords = NavigationShareParser.parse("https://www.google.com/maps/place/Wadi+Al+Sail+Mall/@26.1261301,50.5468828,17z")
+        assertEquals(26.1261301, atCoords?.lat ?: 0.0, 0.0)
+        assertEquals(50.5468828, atCoords?.lon ?: 0.0, 0.0)
+
         val dataCoords = NavigationShareParser.parse("https://www.google.com/maps?ftid=0x0:0x0&entry=gps&lucs=,47075915&g_ep=CAESCTExLjEyLjYwMRgAINeCAyoAQgJCSg&g_st=ic&data=!3d26.2285!4d50.5860")
         assertEquals(26.2285, dataCoords?.lat ?: 0.0, 0.0)
         assertEquals(50.5860, dataCoords?.lon ?: 0.0, 0.0)
@@ -121,6 +129,8 @@ class RemoteProtocolCodecTest {
             "geo:0,0?q=26.0712272,50.5100822",
             NavigationShareParser.firstShareUri("geo:0,0?q=26.0712272,50.5100822"),
         )
+        assertNull(NavigationShareParser.parse("https://maps.app.goo.gl/SLyQtAJodj87xyhJ6"))
+        assertNull(NavigationShareParser.parse("maps.app.goo.gl/SLyQtAJodj87xyhJ6"))
 
         val query = NavigationShareParser.parse("Bahrain International Circuit")
         assertEquals("Bahrain International Circuit", query?.query)
