@@ -136,7 +136,7 @@ class ConnectedCarNotificationService : Service() {
         val updated = state.lastStatusRefreshMillis?.let { formatNotificationTime(it, language) } ?: label(language, "No update yet")
         val content = "${label(language, "Battery")} $battery • ${label(language, "Fuel")} $fuel • ${label(language, "Updated")} $updated"
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_jetour_logomark)
             .setContentTitle(
                 if (state.connectionState is RemoteConnectionState.Ready) {
@@ -149,6 +149,8 @@ class ConnectedCarNotificationService : Service() {
             .setStyle(NotificationCompat.BigTextStyle().bigText(content))
             .setContentIntent(activityIntent())
             .setOngoing(true)
+            .setAutoCancel(false)
+            .setLocalOnly(true)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -164,6 +166,11 @@ class ConnectedCarNotificationService : Service() {
                 serviceIntent(if (hazardsOn) ACTION_HAZARDS_OFF else ACTION_HAZARDS_ON),
             )
             .build()
+        notification.flags = notification.flags or
+            Notification.FLAG_ONGOING_EVENT or
+            Notification.FLAG_NO_CLEAR or
+            Notification.FLAG_FOREGROUND_SERVICE
+        return notification
     }
 
     private fun activityIntent(): PendingIntent =

@@ -169,7 +169,7 @@ data class RemoteUiState(
     val appTheme: AppTheme = AppTheme.HimalayaSlate,
     val appColorMode: AppColorMode = AppColorMode.Dark,
     val appIconTheme: AppIconTheme = AppIconTheme.GtBlack,
-    val bleWakeEnabled: Boolean = false,
+    val bleWakeEnabled: Boolean = true,
     val companionAssociationId: Int? = null,
     val regionalFeaturesEnabled: Boolean = false,
     val localAuthEnabled: Boolean = true,

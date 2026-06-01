@@ -131,7 +131,7 @@ class SecureSettingsStore(context: Context) : SettingsStore {
         prefs.edit().putString(KEY_APP_ICON_THEME, theme.name).apply()
     }
 
-    override fun isBleWakeEnabled(): Boolean = prefs.getBoolean(KEY_BLE_WAKE_ENABLED, false)
+    override fun isBleWakeEnabled(): Boolean = prefs.getBoolean(KEY_BLE_WAKE_ENABLED, true)
 
     override fun setBleWakeEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_BLE_WAKE_ENABLED, enabled).apply()

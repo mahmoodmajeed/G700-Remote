@@ -1,6 +1,6 @@
 # BLE Proximity Wake Architecture
 
-G700 Remote can optionally register an Android-managed BLE scan that wakes the app when the paired DisplayMirror BLE peripheral advertises nearby. The feature is off by default and is designed to avoid a constant app-owned background service or periodic high-power scans.
+G700 Remote can optionally register an Android-managed BLE scan that wakes the app when the paired DisplayMirror BLE peripheral advertises nearby. The feature is on by default for new installs and is designed to avoid a constant app-owned background service or periodic high-power scans.
 
 ## Design
 
@@ -23,7 +23,7 @@ G700 Remote can optionally register an Android-managed BLE scan that wakes the a
 
 ## Manual Test Checklist
 
-- Fresh install, pair DisplayMirror, enable "Wake when nearby".
+- Fresh install, pair DisplayMirror, confirm "Wake when nearby" is enabled.
 - Grant Bluetooth permissions and notification permission.
 - Deny Bluetooth permissions and confirm the app does not crash.
 - Enable Companion Device setup from Settings and confirm Android association.

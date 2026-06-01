@@ -5,9 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.IntentSenderRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -136,7 +133,6 @@ import com.mmy.g700remote.R
 import com.mmy.g700remote.BuildConfig
 import com.mmy.g700remote.ConnectedCarNotificationService
 import com.mmy.g700remote.ble.ConnectionPreference
-import com.mmy.g700remote.blewake.BleCompanionManager
 import com.mmy.g700remote.G700RemoteViewModel
 import com.mmy.g700remote.ble.RemoteConnectionState
 import com.mmy.g700remote.ble.TransportKind
@@ -214,18 +210,6 @@ fun G700RemoteApp(
         scope.launch { snackbarHostState.showSnackbar(translate(language, message)) }
     }
 
-    val companionAssociationLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartIntentSenderForResult(),
-    ) { result ->
-        val associationId = BleCompanionManager.extractAssociationId(result.data)
-        if (associationId != null) {
-            viewModel.setCompanionAssociationId(associationId)
-            showUserNotice("Companion wake is ready.")
-        } else {
-            showUserNotice("Companion setup finished. If Android did not confirm it, the BLE wake scan remains active.")
-        }
-    }
-
     fun submit(command: RemoteCommand) {
         if (demoMode) {
             demoTelemetry = applyDemoCommand(demoTelemetry, command)
@@ -274,20 +258,6 @@ fun G700RemoteApp(
                 )
             }
         }
-    }
-
-    fun setupCompanionWake() {
-        BleCompanionManager.requestAssociation(
-            activity = activity,
-            onLaunch = { sender ->
-                companionAssociationLauncher.launch(IntentSenderRequest.Builder(sender).build())
-            },
-            onAssociated = { id ->
-                viewModel.setCompanionAssociationId(id)
-                showUserNotice("Companion wake is ready.")
-            },
-            onError = ::showUserNotice,
-        )
     }
 
     val displayedState = if (demoMode) {
@@ -450,10 +420,9 @@ fun G700RemoteApp(
                 onCommand = ::submit,
                 onReconnect = {},
                 onDisconnect = { demoMode = false },
-                onStartScan = viewModel::startScan,
-                onPair = viewModel::pairAndConnect,
                 onClearPairing = viewModel::clearPairing,
                 onPairingCodeChanged = viewModel::setPairingCode,
+                onClearNavigationHistory = viewModel::clearNavigationHistory,
                 onBleEnabledChanged = viewModel::setBleEnabled,
                 onLanEnabledChanged = viewModel::setLanEnabled,
                 onConnectionPreferenceChanged = viewModel::setConnectionPreference,
@@ -467,7 +436,6 @@ fun G700RemoteApp(
                 onLoggingChanged = viewModel::setLoggingEnabled,
                 onConnectedNotificationChanged = viewModel::setConnectedNotificationEnabled,
                 onBleWakeEnabledChanged = viewModel::setBleWakeEnabled,
-                onSetupCompanionWake = ::setupCompanionWake,
                 updateState = updateState,
                 onCheckForUpdates = viewModel::checkForUpdates,
                 onDownloadUpdate = { viewModel.downloadAndInstallUpdate(activity, it) },
@@ -480,7 +448,6 @@ fun G700RemoteApp(
                     }
                 },
                 onDeleteNavigationHistory = viewModel::deleteNavigationHistory,
-                onClearNavigationHistory = viewModel::clearNavigationHistory,
                 onDemoModeChanged = { enabled -> demoMode = enabled },
                 onUserNotice = ::showUserNotice,
                 showUpdates = showUpdates,
@@ -512,10 +479,9 @@ fun G700RemoteApp(
                 onCommand = ::submit,
                 onReconnect = viewModel::connectSaved,
                 onDisconnect = viewModel::disconnect,
-                onStartScan = viewModel::startScan,
-                onPair = viewModel::pairAndConnect,
                 onClearPairing = viewModel::clearPairing,
                 onPairingCodeChanged = viewModel::setPairingCode,
+                onClearNavigationHistory = viewModel::clearNavigationHistory,
                 onBleEnabledChanged = viewModel::setBleEnabled,
                 onLanEnabledChanged = viewModel::setLanEnabled,
                 onConnectionPreferenceChanged = viewModel::setConnectionPreference,
@@ -529,7 +495,6 @@ fun G700RemoteApp(
                 onLoggingChanged = viewModel::setLoggingEnabled,
                 onConnectedNotificationChanged = viewModel::setConnectedNotificationEnabled,
                 onBleWakeEnabledChanged = viewModel::setBleWakeEnabled,
-                onSetupCompanionWake = ::setupCompanionWake,
                 updateState = updateState,
                 onCheckForUpdates = viewModel::checkForUpdates,
                 onDownloadUpdate = { viewModel.downloadAndInstallUpdate(activity, it) },
@@ -538,7 +503,6 @@ fun G700RemoteApp(
                 onShareLog = { onShareLog(viewModel.exportLogText()) },
                 onResendNavigationHistory = ::resendNavigationHistory,
                 onDeleteNavigationHistory = viewModel::deleteNavigationHistory,
-                onClearNavigationHistory = viewModel::clearNavigationHistory,
                 onDemoModeChanged = { enabled ->
                     if (enabled) demoTelemetry = demoTelemetry()
                     demoMode = enabled
@@ -1006,10 +970,9 @@ private fun MainRemoteScaffold(
     onCommand: (RemoteCommand) -> Unit,
     onReconnect: () -> Unit,
     onDisconnect: () -> Unit,
-    onStartScan: () -> Unit,
-    onPair: (com.mmy.g700remote.ble.ScannedDevice) -> Unit,
     onClearPairing: () -> Unit,
     onPairingCodeChanged: (String) -> Unit,
+    onClearNavigationHistory: () -> Unit,
     onBleEnabledChanged: (Boolean) -> Unit,
     onLanEnabledChanged: (Boolean) -> Unit,
     onConnectionPreferenceChanged: (ConnectionPreference) -> Unit,
@@ -1023,7 +986,6 @@ private fun MainRemoteScaffold(
     onLoggingChanged: (Boolean) -> Unit,
     onConnectedNotificationChanged: (Boolean) -> Unit,
     onBleWakeEnabledChanged: (Boolean) -> Unit,
-    onSetupCompanionWake: () -> Unit,
     updateState: AppUpdateState,
     onCheckForUpdates: () -> Unit,
     onDownloadUpdate: (AppUpdateInfo) -> Unit,
@@ -1032,7 +994,6 @@ private fun MainRemoteScaffold(
     onShareLog: () -> Unit,
     onResendNavigationHistory: (NavigationHistoryEntry) -> Unit,
     onDeleteNavigationHistory: (Long) -> Unit,
-    onClearNavigationHistory: () -> Unit,
     onDemoModeChanged: (Boolean) -> Unit,
     onUserNotice: (String) -> Unit,
     showUpdates: Boolean,
@@ -1097,10 +1058,9 @@ private fun MainRemoteScaffold(
             AppTab.Settings -> SettingsScreen(
                 state = state,
                 onCommand = onCommand,
-                onStartScan = onStartScan,
-                onPair = onPair,
                 onClearPairing = onClearPairing,
                 onPairingCodeChanged = onPairingCodeChanged,
+                onClearNavigationHistory = onClearNavigationHistory,
                 onBleEnabledChanged = onBleEnabledChanged,
                 onLanEnabledChanged = onLanEnabledChanged,
                 onConnectionPreferenceChanged = onConnectionPreferenceChanged,
@@ -1114,7 +1074,6 @@ private fun MainRemoteScaffold(
                 onLoggingChanged = onLoggingChanged,
                 onConnectedNotificationChanged = onConnectedNotificationChanged,
                 onBleWakeEnabledChanged = onBleWakeEnabledChanged,
-                onSetupCompanionWake = onSetupCompanionWake,
                 updateState = updateState,
                 onCheckForUpdates = onCheckForUpdates,
                 onDownloadUpdate = onDownloadUpdate,
@@ -1196,9 +1155,7 @@ private fun HeaderStatusAction(
     } else {
         state.pairedDevice?.name ?: state.pairedDevice?.address ?: tr("No paired device")
     }
-    val showTransportIcon = state.demoMode ||
-        state.pairedDevice != null ||
-        state.connectionState is RemoteConnectionState.Ready
+    val isConnected = state.connectionState is RemoteConnectionState.Ready
     val transportIcon = state.headerTransportIcon()
     Column(
         modifier = modifier
@@ -1230,17 +1187,17 @@ private fun HeaderStatusAction(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (showTransportIcon) {
+            if (isConnected) {
+                Spacer(Modifier.width(6.dp))
                 Icon(
                     transportIcon,
                     contentDescription = null,
-                    modifier = Modifier.size(14.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(15.dp),
+                    tint = MaterialTheme.colorScheme.onSurface,
                 )
-                Spacer(Modifier.width(6.dp))
             }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 deviceName,
                 modifier = Modifier.weight(1f, fill = false),
@@ -1250,14 +1207,16 @@ private fun HeaderStatusAction(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                lastRefreshStatusLine(state),
-                style = MaterialTheme.typography.labelSmall.copy(lineHeight = 14.sp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        if (!isConnected) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    lastRefreshStatusLine(state),
+                    style = MaterialTheme.typography.labelSmall.copy(lineHeight = 14.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -2142,10 +2101,9 @@ private fun NavigationHistoryRow(
 private fun SettingsScreen(
     state: RemoteUiState,
     onCommand: (RemoteCommand) -> Unit,
-    onStartScan: () -> Unit,
-    onPair: (com.mmy.g700remote.ble.ScannedDevice) -> Unit,
     onClearPairing: () -> Unit,
     onPairingCodeChanged: (String) -> Unit,
+    onClearNavigationHistory: () -> Unit,
     onBleEnabledChanged: (Boolean) -> Unit,
     onLanEnabledChanged: (Boolean) -> Unit,
     onConnectionPreferenceChanged: (ConnectionPreference) -> Unit,
@@ -2159,7 +2117,6 @@ private fun SettingsScreen(
     onLoggingChanged: (Boolean) -> Unit,
     onConnectedNotificationChanged: (Boolean) -> Unit,
     onBleWakeEnabledChanged: (Boolean) -> Unit,
-    onSetupCompanionWake: () -> Unit,
     updateState: AppUpdateState,
     onCheckForUpdates: () -> Unit,
     onDownloadUpdate: (AppUpdateInfo) -> Unit,
@@ -2170,13 +2127,55 @@ private fun SettingsScreen(
     modifier: Modifier = Modifier,
 ) {
     var advancedExpanded by rememberSaveable { mutableStateOf(false) }
+    var showClearPairingDialog by rememberSaveable { mutableStateOf(false) }
+    if (showClearPairingDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearPairingDialog = false },
+            title = { Text(tr("Forget paired car?")) },
+            text = {
+                Text(
+                    tr("This returns the app to first-time setup. You can keep shared-link history or clear it too."),
+                )
+            },
+            confirmButton = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(
+                        onClick = {
+                            showClearPairingDialog = false
+                            onPairingCodeChanged("")
+                            onClearPairing()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(tr("Keep links"))
+                    }
+                    Button(
+                        onClick = {
+                            showClearPairingDialog = false
+                            onPairingCodeChanged("")
+                            onClearNavigationHistory()
+                            onClearPairing()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(tr("Clear links too"))
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearPairingDialog = false }) {
+                    Text(tr("Cancel"))
+                }
+            },
+        )
+    }
     LazyColumn(
         modifier = modifier,
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
-            Section(tr("Connectivity & pairing")) {
+            Section(tr("Connectivity")) {
                 Button(
                     onClick = onDisconnect,
                     enabled = state.connectionState is RemoteConnectionState.Ready,
@@ -2192,31 +2191,6 @@ private fun SettingsScreen(
                 MetricRow(tr("Active"), state.connectionState.activeTransportLabel())
                 state.lastStatusRefreshMillis?.let {
                     MetricRow(tr("Last refresh"), formatFriendlyRefreshTime(it))
-                }
-                MetricRow(tr("Device"), state.pairedDevice?.name ?: tr("Unnamed"))
-                MetricRow(tr("Address"), state.pairedDevice?.address ?: tr("not paired"))
-                MetricRow(tr("Transport"), state.pairedDevice?.transport?.label() ?: tr("Unknown"))
-                Spacer(Modifier.height(10.dp))
-                PairingCodeField(
-                    value = state.pairingCode,
-                    onValueChange = onPairingCodeChanged,
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(onClick = onStartScan, modifier = Modifier.weight(1f), shape = RoundedCornerShape(20.dp)) {
-                        Icon(Icons.Outlined.BluetoothSearching, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(tr("Scan"))
-                    }
-                    OutlinedButton(onClick = onClearPairing, modifier = Modifier.weight(1f), shape = RoundedCornerShape(20.dp)) {
-                        Icon(Icons.Outlined.Delete, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(tr("Clear"))
-                    }
-                }
-                if (state.isScanning) {
-                    Spacer(Modifier.height(12.dp))
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 }
                 Spacer(Modifier.height(14.dp))
                 ProtocolSwitchRow(
@@ -2247,31 +2221,12 @@ private fun SettingsScreen(
                     icon = Icons.Outlined.BluetoothSearching,
                     onCheckedChange = onBleWakeEnabledChanged,
                 )
-                if (state.bleWakeEnabled) {
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedButton(
-                        onClick = onSetupCompanionWake,
-                        enabled = state.pairedDevice != null,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(20.dp),
-                    ) {
-                        Icon(Icons.Outlined.Bluetooth, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            if (state.companionAssociationId != null) {
-                                tr("Refresh companion setup")
-                            } else {
-                                tr("Set up companion wake")
-                            },
-                        )
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        tr("Companion setup is the preferred Android path for reliable background activation. BLE scan wake remains registered as a fallback."),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    tr("When enabled, Android registers BLE wake automatically after pairing. No companion setup button is required."),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 Spacer(Modifier.height(8.dp))
                 Text(tr("Priority"), fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(6.dp))
@@ -2279,21 +2234,6 @@ private fun SettingsScreen(
                     preference = state.connectionPreference,
                     onPreference = onConnectionPreferenceChanged,
                 )
-            }
-        }
-        items(state.scanResults, key = { it.address }) { device ->
-            ElevatedCard(onClick = { onPair(device) }, shape = RoundedCornerShape(8.dp)) {
-                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(if (device.transport == TransportKind.Lan) Icons.Outlined.Wifi else Icons.Outlined.Bluetooth, contentDescription = null)
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(device.name ?: tr("Unnamed"))
-                        Text(
-                            "${device.transport.label()}  ${device.address}${if (device.transport == TransportKind.Ble) "  RSSI ${device.rssi}" else ""}",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
             }
         }
         item {
@@ -2535,6 +2475,30 @@ private fun SettingsScreen(
                         Spacer(Modifier.width(8.dp))
                         Text(tr("Enable demo mode"))
                     }
+                }
+            }
+        }
+        item {
+            Section(tr("Pairing")) {
+                MetricRow(tr("Device"), state.pairedDevice?.name ?: tr("Unnamed"))
+                MetricRow(tr("Address"), state.pairedDevice?.address ?: tr("not paired"))
+                MetricRow(tr("Transport"), state.pairedDevice?.transport?.label() ?: tr("Unknown"))
+                Spacer(Modifier.height(10.dp))
+                PairingCodeField(
+                    value = state.pairingCode,
+                    onValueChange = {},
+                    readOnly = true,
+                    supportingText = tr("Clear pairing to restart first-time setup."),
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = { showClearPairingDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                ) {
+                    Icon(Icons.Outlined.Delete, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(tr("Forget paired car"))
                 }
             }
         }
@@ -3017,6 +2981,8 @@ private fun CompactSection(
 private fun PairingCodeField(
     value: String,
     onValueChange: (String) -> Unit,
+    readOnly: Boolean = false,
+    supportingText: String? = null,
 ) {
     OutlinedTextField(
         value = value,
@@ -3024,6 +2990,7 @@ private fun PairingCodeField(
             onValueChange(input.filter { it.isDigit() }.take(8))
         },
         modifier = Modifier.fillMaxWidth(),
+        readOnly = readOnly,
         label = { Text(tr("Pairing code")) },
         placeholder = { Text(tr("4 to 8 digits")) },
         singleLine = true,
@@ -3031,7 +2998,7 @@ private fun PairingCodeField(
         supportingText = {
             val valid = value.length in 4..8
             Text(
-                if (valid) tr("Saved on this phone") else tr("Enter the code shown by DisplayMirror"),
+                supportingText ?: if (valid) tr("Saved on this phone") else tr("Enter the code shown by DisplayMirror"),
                 color = if (valid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         },
@@ -3889,27 +3856,25 @@ private fun releaseNotes(language: AppLanguage): ReleaseNotesCopy =
     if (language == AppLanguage.Arabic) {
         ReleaseNotesCopy(
             title = "ما الجديد في الإصدار ${BuildConfig.VERSION_NAME}",
-            intro = "تحسينات هذا الإصدار تركز على شريط الاتصال، شكل الأيقونة، وحركة التنقل.",
+            intro = "تحسينات هذا الإصدار تركز على شريط الاتصال، الإعدادات، وإشعار التحكم السريع.",
             items = listOf(
-                "يعرض شريط الاتصال الآن الحالة، آخر تحديث، واسم السيارة بثلاثة أسطر أوضح.",
-                "يمكن الضغط على منطقة الحالة نفسها للاتصال أو تحديث بيانات السيارة، مع إزالة زر التحديث الكبير من الأعلى.",
-                "إضافة خيارات جديدة لأيقونة التطبيق من الإعدادات، مع أيقونة GT افتراضية بخلفية سوداء وشعار أبيض.",
-                "إضافة خيار اختياري لإيقاظ التطبيق عند اقتراب جهاز DisplayMirror عبر BLE بدون تشغيل خدمة مستمرة في الخلفية.",
-                "أصبح مظهر Himalaya Slate هو المظهر الافتراضي للتثبيت الجديد.",
-                "حركة اختيار التبويب في الأسفل أصبحت أكثر سلاسة، حيث ينتقل المؤشر بين الأقسام بدل التبديل المفاجئ.",
+                "أصبح شريط الاتصال أوضح: عند الاتصال يظهر نوع الاتصال BLE أو LAN مع الأيقونة بجانب الحالة، واسم السيارة في السطر التالي.",
+                "تم ترتيب الإعدادات بحيث تكون خيارات الاتصال في الأعلى، بينما انتقل الاقتران إلى أسفل الصفحة كقسم للقراءة وإعادة الإعداد فقط.",
+                "عند نسيان الاقتران، يمكنك اختيار الإبقاء على سجل الروابط أو مسحه مع تأكيد واضح.",
+                "إيقاظ التطبيق عند الاقتراب أصبح مفعلاً افتراضياً للتثبيت الجديد، بدون زر إعداد إضافي قد يسبب تعطل التطبيق.",
+                "إشعار التحكم عند الاتصال أصبح أكثر ثباتاً وأقل قابلية للإزالة بالخطأ.",
             ),
         )
     } else {
         ReleaseNotesCopy(
             title = "What's new in ${BuildConfig.VERSION_NAME}",
-            intro = "This update focuses on the header, launcher icon, and navigation motion.",
+            intro = "This update focuses on the connection header, Settings, and the connected quick-control notification.",
             items = listOf(
-                "The header now shows connection state, last update, and car name as a cleaner three-line block.",
-                "Tap the header status area to connect or refresh; the large top refresh/connect button was removed.",
-                "Settings now includes launcher icon choices, including the new default black GT icon.",
-                "Optional BLE proximity wake can wake the app when DisplayMirror is nearby without keeping a constant background service.",
-                "Himalaya Slate is now the default theme for new installs.",
-                "The bottom tab highlight now slides between sections with a smoother expressive motion.",
+                "The header is cleaner: when connected, BLE or LAN appears with its icon beside the status, and the car name moves to the next line.",
+                "Settings now puts connectivity controls at the top and moves pairing to the bottom as a read-only reset section.",
+                "Forgetting the paired car now asks whether to keep or clear shared-link history.",
+                "Wake when nearby is enabled by default for new installs, with no extra companion setup button in Settings.",
+                "The connected quick-control notification is now harder to dismiss accidentally while the car is connected.",
             ),
         )
     }
@@ -4083,6 +4048,12 @@ private val ArabicTranslations = mapOf(
     "Transport" to "طريقة الاتصال",
     "Connectivity" to "الاتصال",
     "Connectivity & pairing" to "الاتصال والاقتران",
+    "Forget paired car?" to "نسيان السيارة المقترنة؟",
+    "This returns the app to first-time setup. You can keep shared-link history or clear it too." to "سيعود التطبيق إلى شاشة الإعداد الأولى. يمكنك الإبقاء على سجل الروابط أو مسحه أيضاً.",
+    "Keep links" to "الإبقاء على الروابط",
+    "Clear links too" to "مسح الروابط أيضاً",
+    "Forget paired car" to "نسيان السيارة المقترنة",
+    "Clear pairing to restart first-time setup." to "امسح الاقتران لإعادة بدء الإعداد الأول.",
     "Bluetooth LE" to "بلوتوث LE",
     "Best for close range and remote-key use." to "الأفضل للاستخدام القريب كمفتاح عن بعد.",
     "LAN / mDNS" to "الشبكة المحلية / mDNS",
@@ -4103,6 +4074,7 @@ private val ArabicTranslations = mapOf(
     "Keep a persistent notification with light status and quick actions while connected." to "يعرض إشعاراً مستمراً عند الاتصال مع حالة مختصرة وأزرار سريعة.",
     "Wake when nearby" to "الإيقاظ عند الاقتراب",
     "Android wakes the app when your paired DisplayMirror BLE device advertises nearby. No constant background scan is kept." to "يسمح لأندرويد بإيقاظ التطبيق عند ظهور جهاز DisplayMirror المقترن قريباً عبر BLE بدون تشغيل فحص دائم في الخلفية.",
+    "When enabled, Android registers BLE wake automatically after pairing. No companion setup button is required." to "عند تفعيله، يسجل أندرويد إيقاظ BLE تلقائياً بعد الاقتران. لا حاجة إلى زر إعداد إضافي.",
     "Set up companion wake" to "إعداد إيقاظ الجهاز المرافق",
     "Refresh companion setup" to "تحديث إعداد الجهاز المرافق",
     "Companion setup is the preferred Android path for reliable background activation. BLE scan wake remains registered as a fallback." to "إعداد الجهاز المرافق هو الطريقة المفضلة في أندرويد للتفعيل من الخلفية بثبات أكبر. ويبقى إيقاظ BLE مسجلاً كخيار احتياطي.",
