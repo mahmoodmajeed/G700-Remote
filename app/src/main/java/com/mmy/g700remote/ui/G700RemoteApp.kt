@@ -1159,7 +1159,6 @@ private fun ConnectionHeader(
             HeaderStatusAction(
                 state = state,
                 enabled = !isConnecting && state.pairedDevice != null,
-                isReady = isReady,
                 onClick = if (isReady) onRefresh else onReconnect,
                 modifier = Modifier.weight(1f),
             )
@@ -1182,7 +1181,6 @@ private fun ConnectionHeader(
 private fun HeaderStatusAction(
     state: RemoteUiState,
     enabled: Boolean,
-    isReady: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1193,12 +1191,15 @@ private fun HeaderStatusAction(
         animationSpec = expressiveSpring(),
         label = "header-status-scale",
     )
-    val actionIcon = if (isReady) Icons.Outlined.Refresh else Icons.Outlined.BluetoothSearching
     val deviceName = if (state.demoMode) {
         tr("Demo mode")
     } else {
         state.pairedDevice?.name ?: state.pairedDevice?.address ?: tr("No paired device")
     }
+    val showTransportIcon = state.demoMode ||
+        state.pairedDevice != null ||
+        state.connectionState is RemoteConnectionState.Ready
+    val transportIcon = state.headerTransportIcon()
     Column(
         modifier = modifier
             .graphicsLayer {
@@ -1231,15 +1232,15 @@ private fun HeaderStatusAction(
             )
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                lastRefreshStatusLine(state),
-                style = MaterialTheme.typography.labelSmall.copy(lineHeight = 14.sp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (showTransportIcon) {
+                Icon(
+                    transportIcon,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.width(6.dp))
+            }
             Text(
                 deviceName,
                 modifier = Modifier.weight(1f, fill = false),
@@ -1248,15 +1249,15 @@ private fun HeaderStatusAction(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (state.pairedDevice != null) {
-                Spacer(Modifier.width(6.dp))
-                Icon(
-                    actionIcon,
-                    contentDescription = if (isReady) tr("Refresh status") else tr("Connect"),
-                    modifier = Modifier.size(13.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                lastRefreshStatusLine(state),
+                style = MaterialTheme.typography.labelSmall.copy(lineHeight = 14.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -3698,8 +3699,11 @@ private fun lastRefreshStatusLine(state: RemoteUiState): String {
     return if (isCurrent) tr("Current") else "${tr("Last status")} ${formatFriendlyRefreshTime(refreshedAt)}"
 }
 
-private fun RemoteConnectionState.readyTransportIcon(): ImageVector =
-    if (this is RemoteConnectionState.Ready && transport == TransportKind.Lan) Icons.Outlined.Wifi else Icons.Outlined.Bluetooth
+private fun RemoteUiState.headerTransportIcon(): ImageVector {
+    val activeTransport = (connectionState as? RemoteConnectionState.Ready)?.transport
+    val transport = activeTransport ?: pairedDevice?.transport
+    return if (transport == TransportKind.Lan) Icons.Outlined.Wifi else Icons.Outlined.Bluetooth
+}
 
 @Composable
 private fun TransportKind.label(): String = when (this) {
