@@ -115,6 +115,13 @@ enum class AppColorMode {
     Light,
 }
 
+enum class AppIconTheme {
+    GtBlack,
+    GtHorizon,
+    GtDune,
+    DisplayMirror,
+}
+
 enum class LockCommandProgress {
     Locking,
     Unlocking,
@@ -159,8 +166,11 @@ data class RemoteUiState(
     val lanEnabled: Boolean = true,
     val connectionPreference: ConnectionPreference = ConnectionPreference.BleFirst,
     val appLanguage: AppLanguage = AppLanguage.English,
-    val appTheme: AppTheme = AppTheme.G700Horizon,
+    val appTheme: AppTheme = AppTheme.HimalayaSlate,
     val appColorMode: AppColorMode = AppColorMode.Dark,
+    val appIconTheme: AppIconTheme = AppIconTheme.GtBlack,
+    val bleWakeEnabled: Boolean = false,
+    val companionAssociationId: Int? = null,
     val regionalFeaturesEnabled: Boolean = false,
     val localAuthEnabled: Boolean = true,
     val lockStateMapping: LockStateMapping = LockStateMapping.State1Locked,

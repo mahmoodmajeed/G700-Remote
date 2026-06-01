@@ -7,10 +7,12 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.mmy.g700remote.ble.RemoteConnectionState
 import com.mmy.g700remote.data.AppLanguage
@@ -33,6 +35,7 @@ class ConnectedCarNotificationService : Service() {
     private val repository by lazy { G700RemoteAppGraph.repository(applicationContext) }
     private val settings by lazy { G700RemoteAppGraph.settings(applicationContext) }
     private var observerJob: Job? = null
+    private var wakeStarted = false
 
     override fun onCreate() {
         super.onCreate()
@@ -41,6 +44,13 @@ class ConnectedCarNotificationService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            ACTION_START,
+            ACTION_START_FROM_BLE_WAKE -> {
+                wakeStarted = intent.action == ACTION_START_FROM_BLE_WAKE
+                if (wakeStarted && repository.uiState.value.connectionState !is RemoteConnectionState.Ready) {
+                    repository.connectSaved()
+                }
+            }
             ACTION_LOCK -> repository.send(RemoteCommand.Lock)
             ACTION_UNLOCK -> repository.send(RemoteCommand.Unlock)
             ACTION_HAZARDS_ON -> repository.send(RemoteCommand.Hazards(OnOffAction.On))
@@ -60,7 +70,7 @@ class ConnectedCarNotificationService : Service() {
             return START_NOT_STICKY
         }
 
-        startForeground(NOTIFICATION_ID, buildNotification(state))
+        startAsForeground(buildNotification(state))
         observeState()
         return START_STICKY
     }
@@ -94,7 +104,21 @@ class ConnectedCarNotificationService : Service() {
     private fun shouldRun(state: RemoteUiState): Boolean =
         state.connectedNotificationEnabled &&
             settings.isConnectedNotificationEnabled() &&
-            state.connectionState is RemoteConnectionState.Ready
+            (state.connectionState is RemoteConnectionState.Ready ||
+                (wakeStarted && state.pairedDevice != null && state.connectionState !is RemoteConnectionState.Error))
+
+    private fun startAsForeground(notification: Notification) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ServiceCompat.startForeground(
+                this,
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+    }
 
     private fun buildNotification(state: RemoteUiState): Notification {
         val language = state.appLanguage
@@ -114,7 +138,13 @@ class ConnectedCarNotificationService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_jetour_logomark)
-            .setContentTitle(label(language, "G700 Remote connected"))
+            .setContentTitle(
+                if (state.connectionState is RemoteConnectionState.Ready) {
+                    label(language, "G700 Remote connected")
+                } else {
+                    label(language, "G700 Remote connecting")
+                },
+            )
             .setContentText(content)
             .setStyle(NotificationCompat.BigTextStyle().bigText(content))
             .setContentIntent(activityIntent())
@@ -196,11 +226,17 @@ class ConnectedCarNotificationService : Service() {
         private const val CHANNEL_ID = "g700_connected_status"
         private const val NOTIFICATION_ID = 7001
         private const val ACTION_START = "com.mmy.g700remote.action.CONNECTED_NOTIFICATION_START"
+        private const val ACTION_START_FROM_BLE_WAKE = "com.mmy.g700remote.action.CONNECTED_NOTIFICATION_BLE_WAKE"
         private const val ACTION_STOP = "com.mmy.g700remote.action.CONNECTED_NOTIFICATION_STOP"
         private const val ACTION_LOCK = "com.mmy.g700remote.action.NOTIFICATION_LOCK"
         private const val ACTION_UNLOCK = "com.mmy.g700remote.action.NOTIFICATION_UNLOCK"
         private const val ACTION_HAZARDS_ON = "com.mmy.g700remote.action.NOTIFICATION_HAZARDS_ON"
         private const val ACTION_HAZARDS_OFF = "com.mmy.g700remote.action.NOTIFICATION_HAZARDS_OFF"
+
+        fun startIntent(context: Context, source: String): Intent =
+            Intent(context, ConnectedCarNotificationService::class.java)
+                .setAction(ACTION_START_FROM_BLE_WAKE)
+                .putExtra("source", source)
 
         fun setRunning(context: Context, shouldRun: Boolean) {
             val intent = Intent(context, ConnectedCarNotificationService::class.java)

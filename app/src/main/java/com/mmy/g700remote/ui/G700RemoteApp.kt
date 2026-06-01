@@ -5,6 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -18,15 +21,18 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -129,10 +135,12 @@ import com.mmy.g700remote.R
 import com.mmy.g700remote.BuildConfig
 import com.mmy.g700remote.ConnectedCarNotificationService
 import com.mmy.g700remote.ble.ConnectionPreference
+import com.mmy.g700remote.blewake.BleCompanionManager
 import com.mmy.g700remote.G700RemoteViewModel
 import com.mmy.g700remote.ble.RemoteConnectionState
 import com.mmy.g700remote.ble.TransportKind
 import com.mmy.g700remote.data.AppColorMode
+import com.mmy.g700remote.data.AppIconTheme
 import com.mmy.g700remote.data.AppLanguage
 import com.mmy.g700remote.data.AppTheme
 import com.mmy.g700remote.data.AppUpdateInfo
@@ -205,6 +213,18 @@ fun G700RemoteApp(
         scope.launch { snackbarHostState.showSnackbar(translate(language, message)) }
     }
 
+    val companionAssociationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult(),
+    ) { result ->
+        val associationId = BleCompanionManager.extractAssociationId(result.data)
+        if (associationId != null) {
+            viewModel.setCompanionAssociationId(associationId)
+            showUserNotice("Companion wake is ready.")
+        } else {
+            showUserNotice("Companion setup finished. If Android did not confirm it, the BLE wake scan remains active.")
+        }
+    }
+
     fun submit(command: RemoteCommand) {
         if (demoMode) {
             demoTelemetry = applyDemoCommand(demoTelemetry, command)
@@ -253,6 +273,20 @@ fun G700RemoteApp(
                 )
             }
         }
+    }
+
+    fun setupCompanionWake() {
+        BleCompanionManager.requestAssociation(
+            activity = activity,
+            onLaunch = { sender ->
+                companionAssociationLauncher.launch(IntentSenderRequest.Builder(sender).build())
+            },
+            onAssociated = { id ->
+                viewModel.setCompanionAssociationId(id)
+                showUserNotice("Companion wake is ready.")
+            },
+            onError = ::showUserNotice,
+        )
     }
 
     val displayedState = if (demoMode) {
@@ -425,11 +459,14 @@ fun G700RemoteApp(
                 onAppLanguageChanged = viewModel::setAppLanguage,
                 onAppThemeChanged = viewModel::setAppTheme,
                 onAppColorModeChanged = viewModel::setAppColorMode,
+                onAppIconThemeChanged = viewModel::setAppIconTheme,
                 onRegionalFeaturesChanged = viewModel::setRegionalFeaturesEnabled,
                 onLocalAuthChanged = viewModel::setLocalAuthEnabled,
                 onLockMappingChanged = viewModel::setLockStateMapping,
                 onLoggingChanged = viewModel::setLoggingEnabled,
                 onConnectedNotificationChanged = viewModel::setConnectedNotificationEnabled,
+                onBleWakeEnabledChanged = viewModel::setBleWakeEnabled,
+                onSetupCompanionWake = ::setupCompanionWake,
                 updateState = updateState,
                 onCheckForUpdates = viewModel::checkForUpdates,
                 onDownloadUpdate = { viewModel.downloadAndInstallUpdate(activity, it) },
@@ -484,11 +521,14 @@ fun G700RemoteApp(
                 onAppLanguageChanged = viewModel::setAppLanguage,
                 onAppThemeChanged = viewModel::setAppTheme,
                 onAppColorModeChanged = viewModel::setAppColorMode,
+                onAppIconThemeChanged = viewModel::setAppIconTheme,
                 onRegionalFeaturesChanged = viewModel::setRegionalFeaturesEnabled,
                 onLocalAuthChanged = viewModel::setLocalAuthEnabled,
                 onLockMappingChanged = viewModel::setLockStateMapping,
                 onLoggingChanged = viewModel::setLoggingEnabled,
                 onConnectedNotificationChanged = viewModel::setConnectedNotificationEnabled,
+                onBleWakeEnabledChanged = viewModel::setBleWakeEnabled,
+                onSetupCompanionWake = ::setupCompanionWake,
                 updateState = updateState,
                 onCheckForUpdates = viewModel::checkForUpdates,
                 onDownloadUpdate = { viewModel.downloadAndInstallUpdate(activity, it) },
@@ -975,11 +1015,14 @@ private fun MainRemoteScaffold(
     onAppLanguageChanged: (AppLanguage) -> Unit,
     onAppThemeChanged: (AppTheme) -> Unit,
     onAppColorModeChanged: (AppColorMode) -> Unit,
+    onAppIconThemeChanged: (AppIconTheme) -> Unit,
     onRegionalFeaturesChanged: (Boolean) -> Unit,
     onLocalAuthChanged: (Boolean) -> Unit,
     onLockMappingChanged: (LockStateMapping) -> Unit,
     onLoggingChanged: (Boolean) -> Unit,
     onConnectedNotificationChanged: (Boolean) -> Unit,
+    onBleWakeEnabledChanged: (Boolean) -> Unit,
+    onSetupCompanionWake: () -> Unit,
     updateState: AppUpdateState,
     onCheckForUpdates: () -> Unit,
     onDownloadUpdate: (AppUpdateInfo) -> Unit,
@@ -1063,11 +1106,14 @@ private fun MainRemoteScaffold(
                 onAppLanguageChanged = onAppLanguageChanged,
                 onAppThemeChanged = onAppThemeChanged,
                 onAppColorModeChanged = onAppColorModeChanged,
+                onAppIconThemeChanged = onAppIconThemeChanged,
                 onRegionalFeaturesChanged = onRegionalFeaturesChanged,
                 onLocalAuthChanged = onLocalAuthChanged,
                 onLockMappingChanged = onLockMappingChanged,
                 onLoggingChanged = onLoggingChanged,
                 onConnectedNotificationChanged = onConnectedNotificationChanged,
+                onBleWakeEnabledChanged = onBleWakeEnabledChanged,
+                onSetupCompanionWake = onSetupCompanionWake,
                 updateState = updateState,
                 onCheckForUpdates = onCheckForUpdates,
                 onDownloadUpdate = onDownloadUpdate,
@@ -1109,49 +1155,113 @@ private fun ConnectionHeader(
         ) {
             JetourHeaderMark(onClick = onHome)
             Spacer(Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .background(state.connectionState.color(), CircleShape),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        connectionStatusLine(state),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Text(
-                    state.pairedDevice?.name ?: state.pairedDevice?.address ?: tr("No paired device"),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            HeaderStatusAction(
+                state = state,
+                enabled = !isConnecting && state.pairedDevice != null,
+                isReady = isReady,
+                onClick = if (isReady) onRefresh else onReconnect,
+                modifier = Modifier.weight(1f),
+            )
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ExpressiveIconButton(onClick = onOpenHistory) {
                     Icon(Icons.Outlined.Link, contentDescription = tr("Shared links"))
                 }
-                ExpressiveIconButton(
-                    onClick = if (isReady) onRefresh else onReconnect,
-                    enabled = !isConnecting && state.pairedDevice != null,
-                ) {
-                    Icon(
-                        if (isReady) Icons.Outlined.Refresh else Icons.Outlined.BluetoothSearching,
-                        contentDescription = if (isReady) tr("Refresh status") else tr("Connect"),
-                    )
-                }
                 ExpressiveIconButton(onClick = onOpenSettings) {
                     Icon(Icons.Outlined.Settings, contentDescription = tr("Settings"))
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HeaderStatusAction(
+    state: RemoteUiState,
+    enabled: Boolean,
+    isReady: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && enabled) 0.985f else 1f,
+        animationSpec = expressiveSpring(),
+        label = "header-status-scale",
+    )
+    val actionIcon = if (isReady) Icons.Outlined.Refresh else Icons.Outlined.BluetoothSearching
+    val deviceName = if (state.demoMode) {
+        tr("Demo mode")
+    } else {
+        state.pairedDevice?.name ?: state.pairedDevice?.address ?: tr("No paired device")
+    }
+    Column(
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(RoundedCornerShape(18.dp))
+            .clickable(
+                enabled = enabled,
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        verticalArrangement = Arrangement.spacedBy(1.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .background(state.connectionState.color(), CircleShape),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                state.connectionState.label(),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Outlined.Refresh,
+                contentDescription = null,
+                modifier = Modifier.size(13.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                lastRefreshStatusLine(state),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                deviceName,
+                modifier = Modifier.weight(1f, fill = false),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (state.pairedDevice != null) {
+                Spacer(Modifier.width(6.dp))
+                Icon(
+                    actionIcon,
+                    contentDescription = if (isReady) tr("Refresh status") else tr("Connect"),
+                    modifier = Modifier.size(13.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
@@ -1301,6 +1411,8 @@ private fun FloatingNavBar(
     selected: AppTab,
     onSelected: (AppTab) -> Unit,
 ) {
+    val tabs = remember { AppTab.entries.filter { it.showInBottomBar } }
+    val selectedIndex = tabs.indexOf(selected).coerceAtLeast(0)
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -1314,24 +1426,44 @@ private fun FloatingNavBar(
             shadowElevation = 8.dp,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)),
         ) {
-            Row(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(72.dp)
                     .padding(horizontal = 6.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
             ) {
-                AppTab.entries
-                    .filter { it.showInBottomBar }
-                    .forEach { item ->
+                val spacing = 4.dp
+                val itemWidth = (maxWidth - spacing * (tabs.size - 1)) / tabs.size
+                val targetOffset = (itemWidth + spacing) * selectedIndex
+                val indicatorOffset by animateDpAsState(
+                    targetValue = targetOffset,
+                    animationSpec = expressiveSpring(),
+                    label = "nav-indicator-offset",
+                )
+                Surface(
+                    modifier = Modifier
+                        .offset(x = indicatorOffset)
+                        .width(itemWidth)
+                        .fillMaxHeight(),
+                    shape = RoundedCornerShape(26.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    tonalElevation = 3.dp,
+                    shadowElevation = 1.dp,
+                ) {}
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.spacedBy(spacing),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    tabs.forEach { item ->
                         NavPillItem(
                             item = item,
                             selected = selected == item,
                             onClick = { onSelected(item) },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.width(itemWidth),
                         )
                     }
+                }
             }
         }
     }
@@ -1351,17 +1483,12 @@ private fun NavPillItem(
         animationSpec = expressiveSpring(),
         label = "nav-pill-scale",
     )
-    val color by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-        animationSpec = expressiveSpring(),
-        label = "nav-pill-color",
-    )
     val contentColor by animateColorAsState(
         targetValue = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
         animationSpec = expressiveSpring(),
         label = "nav-pill-content",
     )
-    Surface(
+    Box(
         modifier = modifier
             .height(60.dp)
             .graphicsLayer {
@@ -1372,25 +1499,26 @@ private fun NavPillItem(
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick,
-            ),
-        shape = RoundedCornerShape(26.dp),
-        color = color,
-        contentColor = contentColor,
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Icon(item.icon, contentDescription = tr(item.label), modifier = Modifier.size(22.dp))
-            Spacer(Modifier.height(3.dp))
-            Text(
-                tr(item.label),
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
+            .clip(RoundedCornerShape(26.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides contentColor) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Icon(item.icon, contentDescription = tr(item.label), modifier = Modifier.size(22.dp))
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    tr(item.label),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -2029,11 +2157,14 @@ private fun SettingsScreen(
     onAppLanguageChanged: (AppLanguage) -> Unit,
     onAppThemeChanged: (AppTheme) -> Unit,
     onAppColorModeChanged: (AppColorMode) -> Unit,
+    onAppIconThemeChanged: (AppIconTheme) -> Unit,
     onRegionalFeaturesChanged: (Boolean) -> Unit,
     onLocalAuthChanged: (Boolean) -> Unit,
     onLockMappingChanged: (LockStateMapping) -> Unit,
     onLoggingChanged: (Boolean) -> Unit,
     onConnectedNotificationChanged: (Boolean) -> Unit,
+    onBleWakeEnabledChanged: (Boolean) -> Unit,
+    onSetupCompanionWake: () -> Unit,
     updateState: AppUpdateState,
     onCheckForUpdates: () -> Unit,
     onDownloadUpdate: (AppUpdateInfo) -> Unit,
@@ -2114,6 +2245,38 @@ private fun SettingsScreen(
                     icon = Icons.Outlined.DirectionsCar,
                     onCheckedChange = onConnectedNotificationChanged,
                 )
+                ProtocolSwitchRow(
+                    title = tr("Wake when nearby"),
+                    subtitle = tr("Android wakes the app when your paired DisplayMirror BLE device advertises nearby. No constant background scan is kept."),
+                    checked = state.bleWakeEnabled,
+                    icon = Icons.Outlined.BluetoothSearching,
+                    onCheckedChange = onBleWakeEnabledChanged,
+                )
+                if (state.bleWakeEnabled) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = onSetupCompanionWake,
+                        enabled = state.pairedDevice != null,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(20.dp),
+                    ) {
+                        Icon(Icons.Outlined.Bluetooth, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            if (state.companionAssociationId != null) {
+                                tr("Refresh companion setup")
+                            } else {
+                                tr("Set up companion wake")
+                            },
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        tr("Companion setup is the preferred Android path for reliable background activation. BLE scan wake remains registered as a fallback."),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Spacer(Modifier.height(8.dp))
                 Text(tr("Priority"), fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(6.dp))
@@ -2156,6 +2319,13 @@ private fun SettingsScreen(
         }
         item {
             Section(tr("Themes & color")) {
+                Text(
+                    tr("Appearance"),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     SegmentedChoice(
                         label = tr("Dark"),
@@ -2172,10 +2342,29 @@ private fun SettingsScreen(
                         onClick = { onAppColorModeChanged(AppColorMode.Light) },
                     )
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    tr("Color theme"),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
                 ThemeSelector(
                     selected = state.appTheme,
                     onTheme = onAppThemeChanged,
+                )
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    tr("Launcher icon"),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                IconThemeSelector(
+                    selected = state.appIconTheme,
+                    onTheme = onAppIconThemeChanged,
                 )
             }
         }
@@ -2403,6 +2592,114 @@ private fun ThemeSelector(
                 if (rowThemes.size == 1) {
                     Spacer(Modifier.weight(1f))
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun IconThemeSelector(
+    selected: AppIconTheme,
+    onTheme: (AppIconTheme) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        AppIconTheme.entries.chunked(2).forEach { rowThemes ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                rowThemes.forEach { theme ->
+                    LauncherIconChoice(
+                        theme = theme,
+                        selected = selected == theme,
+                        onClick = { onTheme(theme) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                if (rowThemes.size == 1) {
+                    Spacer(Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LauncherIconChoice(
+    theme: AppIconTheme,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val background by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+        animationSpec = expressiveSpring(),
+        label = "launcher-icon-choice-bg",
+    )
+    val border by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
+        animationSpec = expressiveSpring(),
+        label = "launcher-icon-choice-border",
+    )
+    Surface(
+        modifier = modifier
+            .height(78.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(22.dp),
+        color = background,
+        border = BorderStroke(1.dp, border),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            LauncherIconPreview(theme)
+            Text(
+                tr(theme.label()),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LauncherIconPreview(theme: AppIconTheme) {
+    val background = when (theme) {
+        AppIconTheme.GtBlack -> Color(0xFF050606)
+        AppIconTheme.GtHorizon -> Color(0xFFFFB173)
+        AppIconTheme.GtDune -> Color(0xFFE4CFA6)
+        AppIconTheme.DisplayMirror -> Color(0xFF2A2F35)
+    }
+    val logoTint = when (theme) {
+        AppIconTheme.GtBlack -> Color.White
+        AppIconTheme.GtHorizon,
+        AppIconTheme.GtDune -> Color(0xFF1F1711)
+        AppIconTheme.DisplayMirror -> Color.Unspecified
+    }
+    Surface(
+        modifier = Modifier.size(42.dp),
+        shape = RoundedCornerShape(13.dp),
+        color = background,
+        shadowElevation = 1.dp,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            if (theme == AppIconTheme.DisplayMirror) {
+                Icon(
+                    painter = painterResource(R.mipmap.ic_launcher),
+                    contentDescription = null,
+                    modifier = Modifier.size(38.dp),
+                    tint = Color.Unspecified,
+                )
+            } else {
+                Icon(
+                    painter = painterResource(R.drawable.ic_jetour_logomark),
+                    contentDescription = null,
+                    modifier = Modifier.size(width = 31.dp, height = 27.dp),
+                    tint = logoTint,
+                )
             }
         }
     }
@@ -3399,6 +3696,14 @@ private fun connectionStatusLine(state: RemoteUiState): String =
     state.lastStatusRefreshMillis?.let { "${state.connectionState.label()} • ${formatFriendlyRefreshTime(it)}" }
         ?: state.connectionState.label()
 
+@Composable
+private fun lastRefreshStatusLine(state: RemoteUiState): String {
+    val refreshedAt = state.lastStatusRefreshMillis ?: return tr("No status yet")
+    val isCurrent = state.connectionState is RemoteConnectionState.Ready &&
+        System.currentTimeMillis() - refreshedAt < 120_000
+    return if (isCurrent) tr("Current") else "${tr("Last status")} ${formatFriendlyRefreshTime(refreshedAt)}"
+}
+
 private fun RemoteConnectionState.readyTransportIcon(): ImageVector =
     if (this is RemoteConnectionState.Ready && transport == TransportKind.Lan) Icons.Outlined.Wifi else Icons.Outlined.Bluetooth
 
@@ -3414,6 +3719,13 @@ private fun AppTheme.label(): String = when (this) {
     AppTheme.NomadStone -> "Nomad Stone"
     AppTheme.ModernPastel -> "Modern Pastel"
     AppTheme.Minimal -> "Minimal"
+}
+
+private fun AppIconTheme.label(): String = when (this) {
+    AppIconTheme.GtBlack -> "Black GT"
+    AppIconTheme.GtHorizon -> "Horizon GT"
+    AppIconTheme.GtDune -> "Dune GT"
+    AppIconTheme.DisplayMirror -> "DisplayMirror by Baghdady92"
 }
 
 @Composable
@@ -3579,27 +3891,27 @@ private fun releaseNotes(language: AppLanguage): ReleaseNotesCopy =
     if (language == AppLanguage.Arabic) {
         ReleaseNotesCopy(
             title = "ما الجديد في الإصدار ${BuildConfig.VERSION_NAME}",
-            intro = "تحسينات هذا الإصدار تركز على جعل التطبيق أوضح عند الاتصال، وأسهل للاستخدام اليومي.",
+            intro = "تحسينات هذا الإصدار تركز على شريط الاتصال، شكل الأيقونة، وحركة التنقل.",
             items = listOf(
-                "عند القفل أو الفتح يظهر انتظار واضح لمدة قصيرة قبل تحديث حالة السيارة، حتى لا تتغير الحالة بشكل مفاجئ.",
-                "يتم حفظ آخر حالة معروفة للسيارة محلياً، ويمكنك رؤيتها لاحقاً حتى إذا لم تكن السيارة متصلة.",
-                "إضافة آخر وقت تحديث بجانب حالة الاتصال في أعلى التطبيق.",
-                "إشعار مستمر عند الاتصال يعرض البطارية والوقود مع أزرار سريعة للقفل أو الفتح والتحذير.",
-                "تحسين سجل الروابط ليعرض اسم الموقع بشكل أنظف بدون تكرار كود الموقع.",
-                "يمكن قراءة هذه الرسالة مرة أخرى من الإعدادات.",
+                "يعرض شريط الاتصال الآن الحالة، آخر تحديث، واسم السيارة بثلاثة أسطر أوضح.",
+                "يمكن الضغط على منطقة الحالة نفسها للاتصال أو تحديث بيانات السيارة، مع إزالة زر التحديث الكبير من الأعلى.",
+                "إضافة خيارات جديدة لأيقونة التطبيق من الإعدادات، مع أيقونة GT افتراضية بخلفية سوداء وشعار أبيض.",
+                "إضافة خيار اختياري لإيقاظ التطبيق عند اقتراب جهاز DisplayMirror عبر BLE بدون تشغيل خدمة مستمرة في الخلفية.",
+                "أصبح مظهر Himalaya Slate هو المظهر الافتراضي للتثبيت الجديد.",
+                "حركة اختيار التبويب في الأسفل أصبحت أكثر سلاسة، حيث ينتقل المؤشر بين الأقسام بدل التبديل المفاجئ.",
             ),
         )
     } else {
         ReleaseNotesCopy(
             title = "What's new in ${BuildConfig.VERSION_NAME}",
-            intro = "This update focuses on clearer connection state and smoother daily use.",
+            intro = "This update focuses on the header, launcher icon, and navigation motion.",
             items = listOf(
-                "Lock and unlock now show a short in-progress state before the refreshed car status appears.",
-                "The app saves the last known vehicle status locally so you can still view it while offline.",
-                "The header now shows the last refresh time beside the connection state.",
-                "A connected notification shows battery, fuel, and quick Lock/Unlock and Hazards actions.",
-                "Shared-link history is cleaner and avoids repeating location plus codes in the title.",
-                "You can reopen these release notes from Settings.",
+                "The header now shows connection state, last update, and car name as a cleaner three-line block.",
+                "Tap the header status area to connect or refresh; the large top refresh/connect button was removed.",
+                "Settings now includes launcher icon choices, including the new default black GT icon.",
+                "Optional BLE proximity wake can wake the app when DisplayMirror is nearby without keeping a constant background service.",
+                "Himalaya Slate is now the default theme for new installs.",
+                "The bottom tab highlight now slides between sections with a smoother expressive motion.",
             ),
         )
     }
@@ -3752,6 +4064,9 @@ private val ArabicTranslations = mapOf(
     "App language" to "لغة التطبيق",
     "Theme" to "المظهر",
     "Themes & color" to "المظهر والألوان",
+    "Appearance" to "طريقة العرض",
+    "Color theme" to "ألوان التطبيق",
+    "Launcher icon" to "أيقونة التطبيق",
     "Dark" to "داكن",
     "Light" to "فاتح",
     "Minimal" to "بسيط",
@@ -3759,6 +4074,10 @@ private val ArabicTranslations = mapOf(
     "Himalaya Slate" to "هيمالايا سليت",
     "Nomad Stone" to "حجر الصحراء",
     "Modern Pastel" to "عصري هادئ",
+    "Black GT" to "GT أسود",
+    "Horizon GT" to "GT أفق",
+    "Dune GT" to "GT رملي",
+    "DisplayMirror by Baghdady92" to "DisplayMirror بواسطة Baghdady92",
     "Pairing" to "الاقتران",
     "Device" to "الجهاز",
     "Address" to "العنوان",
@@ -3778,9 +4097,21 @@ private val ArabicTranslations = mapOf(
     "Active" to "النشط",
     "State" to "الحالة",
     "Last refresh" to "آخر تحديث",
+    "Last status" to "آخر حالة",
+    "Current" to "حالي",
+    "No status yet" to "لا توجد حالة بعد",
     "Today" to "اليوم",
     "Connected notification" to "إشعار الاتصال",
     "Keep a persistent notification with light status and quick actions while connected." to "يعرض إشعاراً مستمراً عند الاتصال مع حالة مختصرة وأزرار سريعة.",
+    "Wake when nearby" to "الإيقاظ عند الاقتراب",
+    "Android wakes the app when your paired DisplayMirror BLE device advertises nearby. No constant background scan is kept." to "يسمح لأندرويد بإيقاظ التطبيق عند ظهور جهاز DisplayMirror المقترن قريباً عبر BLE بدون تشغيل فحص دائم في الخلفية.",
+    "Set up companion wake" to "إعداد إيقاظ الجهاز المرافق",
+    "Refresh companion setup" to "تحديث إعداد الجهاز المرافق",
+    "Companion setup is the preferred Android path for reliable background activation. BLE scan wake remains registered as a fallback." to "إعداد الجهاز المرافق هو الطريقة المفضلة في أندرويد للتفعيل من الخلفية بثبات أكبر. ويبقى إيقاظ BLE مسجلاً كخيار احتياطي.",
+    "Companion wake is ready." to "إيقاظ الجهاز المرافق جاهز.",
+    "Companion setup finished. If Android did not confirm it, the BLE wake scan remains active." to "انتهى إعداد الجهاز المرافق. إذا لم يؤكد أندرويد الاقتران، سيبقى إيقاظ BLE فعالاً.",
+    "Pair DisplayMirror before setting up companion wake." to "اقترن بـ DisplayMirror قبل إعداد إيقاظ الجهاز المرافق.",
+    "Companion Device setup is not supported on this Android version." to "إعداد الجهاز المرافق غير مدعوم في هذا إصدار أندرويد.",
     "Security" to "الأمان",
     "Additional regional features" to "ميزات إقليمية إضافية",
     "Show unavailable regional features" to "إظهار الميزات غير المتوفرة محلياً",

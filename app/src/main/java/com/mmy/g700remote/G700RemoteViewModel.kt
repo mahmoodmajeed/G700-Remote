@@ -5,9 +5,12 @@ import android.app.Activity
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.mmy.g700remote.ble.ConnectionPreference
+import com.mmy.g700remote.blewake.BleCompanionManager
+import com.mmy.g700remote.blewake.BleWakeManager
 import com.mmy.g700remote.data.LockStateMapping
 import com.mmy.g700remote.data.AppLanguage
 import com.mmy.g700remote.data.AppColorMode
+import com.mmy.g700remote.data.AppIconTheme
 import com.mmy.g700remote.data.AppTheme
 import com.mmy.g700remote.data.RemoteUiState
 import com.mmy.g700remote.data.AppUpdateInfo
@@ -25,6 +28,10 @@ class G700RemoteViewModel(application: Application) : AndroidViewModel(applicati
     val updateState: StateFlow<AppUpdateState> = updateManager.state
 
     init {
+        LauncherIconManager.applyIcon(application.applicationContext, uiState.value.appIconTheme)
+        if (uiState.value.bleWakeEnabled) {
+            BleWakeManager.registerBleWakeScan(application.applicationContext)
+        }
         viewModelScope.launch {
             updateManager.checkIfDue()
         }
@@ -35,10 +42,18 @@ class G700RemoteViewModel(application: Application) : AndroidViewModel(applicati
 
     fun startScan() = repository.startScan()
     fun stopScan() = repository.stopScan()
-    fun pairAndConnect(device: com.mmy.g700remote.ble.ScannedDevice) = repository.pairAndConnect(device)
+    fun pairAndConnect(device: com.mmy.g700remote.ble.ScannedDevice) {
+        repository.pairAndConnect(device)
+        if (uiState.value.bleWakeEnabled) {
+            BleWakeManager.registerBleWakeScan(getApplication<Application>().applicationContext)
+        }
+    }
     fun connectSaved() = repository.connectSaved()
     fun disconnect() = repository.disconnect()
-    fun clearPairing() = repository.clearPairing()
+    fun clearPairing() {
+        BleWakeManager.unregisterBleWakeScan(getApplication<Application>().applicationContext)
+        repository.clearPairing()
+    }
     fun send(command: RemoteCommand) = repository.send(command)
     fun setPairingCode(code: String) = repository.setPairingCode(code)
     fun setBleEnabled(enabled: Boolean) = repository.setBleEnabled(enabled)
@@ -47,6 +62,25 @@ class G700RemoteViewModel(application: Application) : AndroidViewModel(applicati
     fun setAppLanguage(language: AppLanguage) = repository.setAppLanguage(language)
     fun setAppTheme(theme: AppTheme) = repository.setAppTheme(theme)
     fun setAppColorMode(mode: AppColorMode) = repository.setAppColorMode(mode)
+    fun setAppIconTheme(theme: AppIconTheme) {
+        repository.setAppIconTheme(theme)
+        LauncherIconManager.applyIcon(getApplication<Application>().applicationContext, theme)
+    }
+    fun setBleWakeEnabled(enabled: Boolean) {
+        repository.setBleWakeEnabled(enabled)
+        val context = getApplication<Application>().applicationContext
+        if (enabled) {
+            BleWakeManager.registerBleWakeScan(context)
+        } else {
+            BleWakeManager.unregisterBleWakeScan(context)
+        }
+    }
+    fun setCompanionAssociationId(id: Int?) {
+        repository.setCompanionAssociationId(id)
+        if (id != null) {
+            BleCompanionManager.startObservingIfAssociated(getApplication<Application>().applicationContext)
+        }
+    }
     fun setRegionalFeaturesEnabled(enabled: Boolean) = repository.setRegionalFeaturesEnabled(enabled)
     fun setLocalAuthEnabled(enabled: Boolean) = repository.setLocalAuthEnabled(enabled)
     fun setLockStateMapping(mapping: LockStateMapping) = repository.setLockStateMapping(mapping)
@@ -65,7 +99,12 @@ class G700RemoteViewModel(application: Application) : AndroidViewModel(applicati
     fun downloadAndInstallUpdate(activity: Activity, info: AppUpdateInfo) = viewModelScope.launch {
         updateManager.downloadAndInstall(activity, info)
     }
-    fun onForeground() = repository.onForeground()
+    fun onForeground() {
+        repository.onForeground()
+        if (uiState.value.bleWakeEnabled) {
+            BleWakeManager.registerBleWakeScan(getApplication<Application>().applicationContext)
+        }
+    }
     fun onBackground() = repository.onBackground()
     fun exportLogText(): String = repository.exportLogText()
 

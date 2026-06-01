@@ -107,8 +107,11 @@ class RemoteRepositoryTest {
         private var lanEnabled = true
         private var preference = ConnectionPreference.BleFirst
         private var language = AppLanguage.English
-        private var theme = AppTheme.G700Horizon
+        private var theme = AppTheme.HimalayaSlate
         private var colorMode = AppColorMode.Dark
+        private var iconTheme = AppIconTheme.GtBlack
+        private var bleWakeEnabled = false
+        private var companionAssociationId: Int? = null
         private var history = initialHistory
         private var snapshot = initialSnapshot
         private var regionalFeatures = false
@@ -158,6 +161,24 @@ class RemoteRepositoryTest {
 
         override fun setAppColorMode(mode: AppColorMode) {
             colorMode = mode
+        }
+
+        override fun getAppIconTheme(): AppIconTheme = iconTheme
+
+        override fun setAppIconTheme(theme: AppIconTheme) {
+            iconTheme = theme
+        }
+
+        override fun isBleWakeEnabled(): Boolean = bleWakeEnabled
+
+        override fun setBleWakeEnabled(enabled: Boolean) {
+            bleWakeEnabled = enabled
+        }
+
+        override fun getCompanionAssociationId(): Int? = companionAssociationId
+
+        override fun setCompanionAssociationId(id: Int?) {
+            companionAssociationId = id
         }
 
         override fun getNavigationHistory(): List<NavigationHistoryEntry> = history

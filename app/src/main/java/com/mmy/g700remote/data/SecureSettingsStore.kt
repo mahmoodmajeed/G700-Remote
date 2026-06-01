@@ -98,10 +98,10 @@ class SecureSettingsStore(context: Context) : SettingsStore {
     override fun getAppTheme(): AppTheme =
         runCatching {
             AppTheme.valueOf(
-                prefs.getString(KEY_APP_THEME, AppTheme.G700Horizon.name)
-                    ?: AppTheme.G700Horizon.name,
+                prefs.getString(KEY_APP_THEME, AppTheme.HimalayaSlate.name)
+                    ?: AppTheme.HimalayaSlate.name,
             )
-        }.getOrDefault(AppTheme.G700Horizon)
+        }.getOrDefault(AppTheme.HimalayaSlate)
 
     override fun setAppTheme(theme: AppTheme) {
         prefs.edit().putString(KEY_APP_THEME, theme.name).apply()
@@ -117,6 +117,50 @@ class SecureSettingsStore(context: Context) : SettingsStore {
 
     override fun setAppColorMode(mode: AppColorMode) {
         prefs.edit().putString(KEY_APP_COLOR_MODE, mode.name).apply()
+    }
+
+    override fun getAppIconTheme(): AppIconTheme =
+        runCatching {
+            AppIconTheme.valueOf(
+                prefs.getString(KEY_APP_ICON_THEME, AppIconTheme.GtBlack.name)
+                    ?: AppIconTheme.GtBlack.name,
+            )
+        }.getOrDefault(AppIconTheme.GtBlack)
+
+    override fun setAppIconTheme(theme: AppIconTheme) {
+        prefs.edit().putString(KEY_APP_ICON_THEME, theme.name).apply()
+    }
+
+    override fun isBleWakeEnabled(): Boolean = prefs.getBoolean(KEY_BLE_WAKE_ENABLED, false)
+
+    override fun setBleWakeEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_BLE_WAKE_ENABLED, enabled).apply()
+    }
+
+    override fun getCompanionAssociationId(): Int? =
+        prefs.getInt(KEY_COMPANION_ASSOCIATION_ID, NO_ASSOCIATION_ID).takeIf { it > 0 }
+
+    override fun setCompanionAssociationId(id: Int?) {
+        prefs.edit().apply {
+            if (id != null && id > 0) {
+                putInt(KEY_COMPANION_ASSOCIATION_ID, id)
+            } else {
+                remove(KEY_COMPANION_ASSOCIATION_ID)
+            }
+        }.apply()
+    }
+
+    fun isBleWakeScanRegistered(): Boolean = prefs.getBoolean(KEY_BLE_WAKE_SCAN_REGISTERED, false)
+
+    fun setBleWakeScanRegistered(registered: Boolean) {
+        prefs.edit().putBoolean(KEY_BLE_WAKE_SCAN_REGISTERED, registered).apply()
+    }
+
+    fun getLastBleWakeMillis(): Long? =
+        prefs.getLong(KEY_LAST_BLE_WAKE_MILLIS, 0L).takeIf { it > 0L }
+
+    fun setLastBleWakeMillis(value: Long) {
+        prefs.edit().putLong(KEY_LAST_BLE_WAKE_MILLIS, value).apply()
     }
 
     override fun getNavigationHistory(): List<NavigationHistoryEntry> {
@@ -287,6 +331,11 @@ class SecureSettingsStore(context: Context) : SettingsStore {
         private const val KEY_APP_LANGUAGE = "app_language"
         private const val KEY_APP_THEME = "app_theme"
         private const val KEY_APP_COLOR_MODE = "app_color_mode"
+        private const val KEY_APP_ICON_THEME = "app_icon_theme"
+        private const val KEY_BLE_WAKE_ENABLED = "ble_wake_enabled"
+        private const val KEY_BLE_WAKE_SCAN_REGISTERED = "ble_wake_scan_registered"
+        private const val KEY_LAST_BLE_WAKE_MILLIS = "last_ble_wake_millis"
+        private const val KEY_COMPANION_ASSOCIATION_ID = "companion_association_id"
         private const val KEY_NAVIGATION_HISTORY = "navigation_history"
         private const val KEY_LAST_VEHICLE_STATUS = "last_vehicle_status"
         private const val KEY_CONNECTED_NOTIFICATION_ENABLED = "connected_notification_enabled"
@@ -296,6 +345,7 @@ class SecureSettingsStore(context: Context) : SettingsStore {
         private const val KEY_LOGGING_ENABLED = "logging_enabled"
         private const val KEY_LAST_SEEN_RELEASE_NOTES_VERSION = "last_seen_release_notes_version"
         private const val MAX_NAV_HISTORY = 50
+        private const val NO_ASSOCIATION_ID = -1
     }
 }
 

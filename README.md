@@ -2,13 +2,13 @@
 
 G700 Remote is a Kotlin Android companion app for Jetour G700 head units running the open-source DisplayMirror app. It connects to DisplayMirror's remote-access protocol over Bluetooth LE or LAN/mDNS and provides a focused phone remote for lock/unlock, climate, openings, lighting, charging, and vehicle telemetry that DisplayMirror exposes.
 
-This repository started from the v1.2 baseline and now tracks the v1.4.6 release. It is intended as the clean source baseline for future development, CI, Play Store preparation, and Codex-assisted changes.
+This repository started from the v1.2 baseline and now tracks the v1.4.9 release. It is intended as the clean source baseline for future development, CI, Play Store preparation, and Codex-assisted changes.
 
 ## Status
 
-- App version: `1.4.6`
+- App version: `1.4.9`
 - Android package: `com.mmy.g700remote`
-- `versionCode`: `11`
+- `versionCode`: `14`
 - Minimum Android: API 30
 - Target/compile SDK: API 36
 - UI: Jetpack Compose Material 3 with an expressive spring-motion surface system
@@ -46,12 +46,13 @@ For implementation details, see [docs/DISPLAYMIRROR_COMPATIBILITY.md](docs/DISPL
 
 - First-time setup with pairing-code entry, a link to DisplayMirror, and a demo mode for review/testing without a paired car.
 - Material 3 Expressive-inspired UI with responsive spring press motion, larger tactile surfaces, and a Jetour-branded header.
+- v1.4.9 refines the header into a three-line status block, moves refresh/connect into the tappable header area, adds selectable launcher icon themes, defaults new installs to Himalaya Slate, adds optional BLE proximity wake, and animates the bottom tab highlight as a sliding pill.
 - v1.4.8 adds smoother lock/unlock progress, persisted last-known vehicle status, last-refresh display, connected quick-action notification, cleaner shared-link titles, and in-app release notes.
 - v1.4.7 sends only resolved map coordinates or clean place text to DisplayMirror, prevents unsupported remote HVAC-off behavior, and keeps Arabic temperature values left-to-right.
 - v1.4.6 improves Lighting readability with vertical actions and makes Android back return to Home before exiting.
 - v1.4.5 shared-link history resend now uses the stored navigation command directly, while tapping the saved link still opens the original location on the phone.
 - v1.4.4 shared-link loading feedback, quieter connection notifications, and a smart header action that connects when offline and refreshes when connected.
-- Dark/light appearance setting, defaulting to dark mode on first install, plus professional G700-inspired color themes.
+- Dark/light appearance setting, defaulting to dark mode on first install, plus professional G700-inspired color themes and launcher icon variants.
 - BLE scanning, LAN/mDNS discovery, and user-selectable transport priority.
 - Smart lock/unlock home action based on returned lock state.
 - Compact vehicle telemetry tiles for battery SOC, fuel, AC, cabin/outside temperature, and coolant when returned.
@@ -66,6 +67,7 @@ For implementation details, see [docs/DISPLAYMIRROR_COMPATIBILITY.md](docs/DISPL
 - Shared-link history with readable place names when available, original-link open back into Maps/browser, resend, delete confirmation, and clear-all confirmation.
 - Last-known status is saved on the phone after refreshes, so offline screens can still show the latest returned vehicle data while controls remain disabled until connected.
 - Optional connected notification, enabled by default, keeps a low-priority ongoing status while connected and provides quick lock/unlock and hazards actions.
+- Optional BLE proximity wake, off by default, registers an Android-managed BLE PendingIntent scan and Companion Device presence setup so the app can wake when the paired DisplayMirror BLE device is nearby without keeping a permanent background scanning service.
 - In-app "What's new" dialog appears after updates and can be reopened from Settings in English or Arabic.
 - Settings for merged connectivity/pairing, language, theme, security gate, regional features, and diagnostics.
 - Settings app update checker using GitHub Releases, with manual check, twice-daily background checks, and a 7-day freshness gate so outdated builds stop controlling the car until the update check succeeds.
@@ -81,6 +83,7 @@ For implementation details, see [docs/DISPLAYMIRROR_COMPATIBILITY.md](docs/DISPL
 - Remote DisplayMirror protocol v4 exposes compressor `ac_on`/`ac_off`, not a full HVAC power command. G700 Remote can start cabin airflow with a moderate fan speed, but remote HVAC-off is blocked with a user message because the reviewed DisplayMirror source does not expose that action.
 - Auto climate mode is not exposed by the reviewed DisplayMirror remote protocol. Auto defrost is shown as a returned/toggleable DisplayMirror mode, but it should still be validated on the vehicle because it depends on head-unit behavior.
 - Android does not allow silent APK installation for normal apps. The updater downloads the signed APK and opens the Android package installer after the user grants install-from-this-source permission.
+- BLE proximity wake depends on DisplayMirror advertising, Android background policy, and OEM battery behavior. It will not run after the user force-stops the app, and Android 12+ may require Companion Device association before the connected foreground notification can start automatically from the background.
 - Values are displayed only when returned by DisplayMirror. Missing fields remain unknown instead of being faked.
 - Lock-state semantics may need real vehicle calibration if DisplayMirror or the head unit changes the returned mapping.
 
@@ -102,6 +105,7 @@ Additional project context lives in:
 - [AGENTS.md](AGENTS.md) for future Codex/AI work.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the internal app structure.
 - [docs/DISPLAYMIRROR_COMPATIBILITY.md](docs/DISPLAYMIRROR_COMPATIBILITY.md) for protocol compatibility notes.
+- [docs/BLE_WAKE_ARCHITECTURE.md](docs/BLE_WAKE_ARCHITECTURE.md) for the battery-conscious BLE proximity wake design and manual test checklist.
 - [docs/RELEASE_AND_PLAY_STORE_NOTES.md](docs/RELEASE_AND_PLAY_STORE_NOTES.md) for release, signing, and store preparation.
 
 ## Build

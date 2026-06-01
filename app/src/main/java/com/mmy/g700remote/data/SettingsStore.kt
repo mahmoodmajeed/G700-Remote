@@ -20,6 +20,12 @@ interface SettingsStore {
     fun setAppTheme(theme: AppTheme)
     fun getAppColorMode(): AppColorMode
     fun setAppColorMode(mode: AppColorMode)
+    fun getAppIconTheme(): AppIconTheme
+    fun setAppIconTheme(theme: AppIconTheme)
+    fun isBleWakeEnabled(): Boolean
+    fun setBleWakeEnabled(enabled: Boolean)
+    fun getCompanionAssociationId(): Int?
+    fun setCompanionAssociationId(id: Int?)
     fun getNavigationHistory(): List<NavigationHistoryEntry>
     fun saveNavigationHistory(history: List<NavigationHistoryEntry>)
     fun getLastVehicleStatus(): VehicleStatusSnapshot?

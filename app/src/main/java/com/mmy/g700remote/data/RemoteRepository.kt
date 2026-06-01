@@ -47,6 +47,9 @@ class RemoteRepository(
             appLanguage = settings.getAppLanguage(),
             appTheme = settings.getAppTheme(),
             appColorMode = settings.getAppColorMode(),
+            appIconTheme = settings.getAppIconTheme(),
+            bleWakeEnabled = settings.isBleWakeEnabled(),
+            companionAssociationId = settings.getCompanionAssociationId(),
             regionalFeaturesEnabled = settings.areRegionalFeaturesEnabled(),
             localAuthEnabled = settings.isLocalAuthEnabled(),
             lockStateMapping = LockStateMapping.State1Locked,
@@ -228,6 +231,21 @@ class RemoteRepository(
     fun setAppColorMode(mode: AppColorMode) {
         settings.setAppColorMode(mode)
         _uiState.update { it.copy(appColorMode = mode) }
+    }
+
+    fun setAppIconTheme(theme: AppIconTheme) {
+        settings.setAppIconTheme(theme)
+        _uiState.update { it.copy(appIconTheme = theme) }
+    }
+
+    fun setBleWakeEnabled(enabled: Boolean) {
+        settings.setBleWakeEnabled(enabled)
+        _uiState.update { it.copy(bleWakeEnabled = enabled) }
+    }
+
+    fun setCompanionAssociationId(id: Int?) {
+        settings.setCompanionAssociationId(id)
+        _uiState.update { it.copy(companionAssociationId = id) }
     }
 
     fun setRegionalFeaturesEnabled(enabled: Boolean) {

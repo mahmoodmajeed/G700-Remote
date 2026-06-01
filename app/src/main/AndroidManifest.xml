@@ -27,6 +27,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
+    <uses-permission android:name="android.permission.REQUEST_COMPANION_START_FOREGROUND_SERVICES_FROM_BACKGROUND"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>
     <uses-permission
@@ -39,8 +41,8 @@
             android:fullBackupContent="@xml/backup_rules"
             android:dataExtractionRules="@xml/data_extraction_rules"
             android:label="@string/app_name"
-            android:icon="@mipmap/ic_launcher"
-            android:roundIcon="@mipmap/ic_launcher_round"
+            android:icon="@mipmap/ic_launcher_gt_black"
+            android:roundIcon="@mipmap/ic_launcher_gt_black"
             android:supportsRtl="true"
             android:theme="@style/Theme.G700Remote"
             tools:targetApi="s">
@@ -48,10 +50,6 @@
                 android:name=".MainActivity"
                 android:exported="true"
                 android:theme="@style/Theme.G700Remote">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
-            </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEND"/>
                 <category android:name="android.intent.category.DEFAULT"/>
@@ -74,10 +72,88 @@
             </intent-filter>
         </activity>
 
+        <activity-alias
+                android:name=".LauncherGtBlack"
+                android:enabled="true"
+                android:exported="true"
+                android:icon="@mipmap/ic_launcher_gt_black"
+                android:roundIcon="@mipmap/ic_launcher_gt_black"
+                android:label="@string/app_name"
+                android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+                android:name=".LauncherGtHorizon"
+                android:enabled="false"
+                android:exported="true"
+                android:icon="@mipmap/ic_launcher_gt_horizon"
+                android:roundIcon="@mipmap/ic_launcher_gt_horizon"
+                android:label="@string/app_name"
+                android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+                android:name=".LauncherGtDune"
+                android:enabled="false"
+                android:exported="true"
+                android:icon="@mipmap/ic_launcher_gt_dune"
+                android:roundIcon="@mipmap/ic_launcher_gt_dune"
+                android:label="@string/app_name"
+                android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+                android:name=".LauncherDisplayMirror"
+                android:enabled="false"
+                android:exported="true"
+                android:icon="@mipmap/ic_launcher"
+                android:roundIcon="@mipmap/ic_launcher_round"
+                android:label="@string/app_name"
+                android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
+
         <service
                 android:name=".ConnectedCarNotificationService"
                 android:exported="false"
                 android:foregroundServiceType="connectedDevice"/>
+
+        <service
+                android:name=".blewake.G700CompanionDeviceService"
+                android:exported="true"
+                android:permission="android.permission.BIND_COMPANION_DEVICE_SERVICE">
+            <intent-filter>
+                <action android:name="android.companion.CompanionDeviceService"/>
+            </intent-filter>
+        </service>
+
+        <receiver
+                android:name=".blewake.BleWakeReceiver"
+                android:exported="false"/>
+
+        <receiver
+                android:name=".blewake.BleWakeBootReceiver"
+                android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+            </intent-filter>
+        </receiver>
 
         <provider
                 android:name="androidx.core.content.FileProvider"

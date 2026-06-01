@@ -12,8 +12,8 @@ android {
         applicationId = "com.mmy.g700remote"
         minSdk = 30
         targetSdk = 36
-        versionCode = 13
-        versionName = "1.4.8"
+        versionCode = 14
+        versionName = "1.4.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
