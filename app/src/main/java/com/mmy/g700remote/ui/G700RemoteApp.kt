@@ -6,10 +6,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.Canvas as AndroidCanvas
-import android.graphics.Paint
-import android.graphics.RectF
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -126,7 +122,6 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalContext
@@ -147,8 +142,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.android.gms.maps.CameraUpdateFactory
-import com.google.android.gms.maps.model.BitmapDescriptor
-import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.GoogleMap
@@ -3656,7 +3649,6 @@ private fun VehicleMapContent(
         cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(carPoint, zoom), durationMs = 650)
     }
     val markerState = remember(location.lat, location.lon) { MarkerState(carPoint) }
-    val markerIcon = rememberCarMarkerIcon()
     GoogleMap(
         modifier = modifier,
         cameraPositionState = cameraPositionState,
@@ -3680,43 +3672,8 @@ private fun VehicleMapContent(
             state = markerState,
             title = "G700",
             snippet = humanReadableLocationAddress(location),
-            icon = markerIcon,
-            anchor = androidx.compose.ui.geometry.Offset(0.5f, 0.5f),
         )
     }
-}
-
-@Composable
-private fun rememberCarMarkerIcon(): BitmapDescriptor {
-    val background = MaterialTheme.colorScheme.primary.toArgb()
-    val foreground = MaterialTheme.colorScheme.onPrimary.toArgb()
-    return remember(background, foreground) {
-        createCarMarkerIcon(background, foreground)
-    }
-}
-
-private fun createCarMarkerIcon(background: Int, foreground: Int): BitmapDescriptor {
-    val bitmap = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888)
-    val canvas = AndroidCanvas(bitmap)
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    paint.color = background
-    paint.alpha = 58
-    canvas.drawCircle(48f, 48f, 44f, paint)
-    paint.alpha = 255
-    canvas.drawCircle(48f, 48f, 31f, paint)
-    paint.color = foreground
-    paint.style = Paint.Style.STROKE
-    paint.strokeWidth = 4.4f
-    paint.strokeCap = Paint.Cap.ROUND
-    paint.strokeJoin = Paint.Join.ROUND
-    canvas.drawRoundRect(RectF(30f, 43f, 66f, 61f), 6f, 6f, paint)
-    canvas.drawLine(36f, 43f, 42f, 35f, paint)
-    canvas.drawLine(42f, 35f, 55f, 35f, paint)
-    canvas.drawLine(55f, 35f, 61f, 43f, paint)
-    paint.style = Paint.Style.FILL
-    canvas.drawCircle(37f, 63f, 3.8f, paint)
-    canvas.drawCircle(59f, 63f, 3.8f, paint)
-    return BitmapDescriptorFactory.fromBitmap(bitmap)
 }
 
 private fun openDirectionsToLocation(context: Context, location: CarLocation) {

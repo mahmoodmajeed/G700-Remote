@@ -2,13 +2,13 @@
 
 G700 Remote is a Kotlin Android companion app for Jetour G700 head units running the open-source DisplayMirror app. It connects to DisplayMirror's remote-access protocol over Bluetooth LE or LAN/mDNS and provides a focused phone remote for lock/unlock, climate, openings, lighting, charging, and vehicle telemetry that DisplayMirror exposes.
 
-This repository started from the v1.2 baseline and now tracks the v1.6.0 release. It is intended as the clean source baseline for future development, CI, Play Store preparation, and Codex-assisted changes.
+This repository started from the v1.2 baseline and now tracks the v1.6.1 release. It is intended as the clean source baseline for future development, CI, Play Store preparation, and Codex-assisted changes.
 
 ## Status
 
-- App version: `1.6.0`
+- App version: `1.6.1`
 - Android package: `com.mmy.g700remote`
-- `versionCode`: `22`
+- `versionCode`: `23`
 - Minimum Android: API 30
 - Target/compile SDK: API 36
 - UI: Jetpack Compose Material 3 with an expressive spring-motion surface system
@@ -47,6 +47,7 @@ For implementation details, see [docs/DISPLAYMIRROR_COMPATIBILITY.md](docs/DISPL
 
 - First-time setup with pairing-code entry, a link to DisplayMirror, and a demo mode for review/testing without a paired car.
 - Material 3 Expressive-inspired UI with responsive spring press motion, larger tactile surfaces, and a Jetour-branded header.
+- v1.6.1 preserves the v1.6.0 release-note content and fixes a startup crash caused by creating a Google Maps bitmap marker before Maps initialized.
 - v1.6.0 keeps the Home redesign and adds an interactive Google Map for vehicle location, an expanded map view with address/coordinates/copy actions, direct navigation directions, pull-to-refresh on app pages, and clearer fresh-status wording.
 - v1.4.12 refines the connected header status, moves pairing reset to the end of Settings with history choices, defaults BLE proximity wake on for new installs, and makes the connected notification harder to dismiss accidentally.
 - v1.4.11 keeps the v1.4.9 feature set and adds minor launcher icon scale and header transport-line polish.
