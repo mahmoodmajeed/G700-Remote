@@ -1,6 +1,6 @@
 # Release And Play Store Notes
 
-These notes prepare the v1.5.0 baseline for future automated builds and Play Store work.
+These notes prepare the v1.5.1 baseline for future automated builds and Play Store work.
 
 ## Local Verification
 
@@ -16,8 +16,8 @@ Generated artifacts are under `app/build/outputs/` and should not be committed.
 
 Current baseline:
 
-- `versionName = "1.5.0"`
-- `versionCode = 18`
+- `versionName = "1.5.1"`
+- `versionCode = 19`
 
 For future releases, increase `versionCode` for every Play Store upload. Keep `versionName` user-readable and match release notes.
 

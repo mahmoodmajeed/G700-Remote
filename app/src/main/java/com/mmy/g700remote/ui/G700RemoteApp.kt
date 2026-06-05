@@ -1570,8 +1570,8 @@ private fun HomeScreen(
     val lockPending = state.pendingLockCommand != null
     LazyColumn(
         modifier = modifier,
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item {
             HomeControlDashboard(
@@ -2952,54 +2952,85 @@ private fun HomeControlDashboard(
     lockPending: Boolean,
     onCommand: (RemoteCommand) -> Unit,
 ) {
+    val scheme = MaterialTheme.colorScheme
     val leftTiles = listOf(
-        TileData(tr("Battery"), state.telemetry.batterySoc?.let { "$it%" } ?: tr("Unknown"), Icons.Outlined.ElectricBolt),
-        TileData(tr("Fuel"), state.telemetry.fuelPercent?.let { "$it%" } ?: tr("Unknown"), Icons.Outlined.LocalGasStation),
+        TileData(tr("Battery"), state.telemetry.batterySoc?.let { "$it%" } ?: tr("Unknown"), Icons.Outlined.ElectricBolt, scheme.primary),
+        TileData(tr("Fuel"), state.telemetry.fuelPercent?.let { "$it%" } ?: tr("Unknown"), Icons.Outlined.LocalGasStation, scheme.tertiary),
         TileData(tr("Air"), when (state.telemetry.fanSpeed?.let { it > 0 }) {
             true -> tr("On")
             false -> tr("Off")
             null -> tr("Unknown")
-        }, Icons.Outlined.AcUnit),
+        }, Icons.Outlined.AcUnit, scheme.secondary),
     )
     val rightTiles = listOf(
-        TileData(tr("Cabin"), state.telemetry.cabinTemp?.let { formatTemp(it) } ?: tr("Unknown"), Icons.Outlined.Thermostat),
-        TileData(tr("Outside"), state.telemetry.outdoorTemp?.let { formatTemp(it) } ?: tr("Unknown"), Icons.Outlined.Air),
-        TileData(tr("Coolant"), state.telemetry.coolantTemp?.let { formatTemp(it) } ?: tr("Unknown"), Icons.Outlined.WaterDrop),
+        TileData(tr("Cabin"), state.telemetry.cabinTemp?.let { formatTemp(it) } ?: tr("Unknown"), Icons.Outlined.Thermostat, scheme.secondary),
+        TileData(tr("Outside"), state.telemetry.outdoorTemp?.let { formatTemp(it) } ?: tr("Unknown"), Icons.Outlined.Air, scheme.primary),
+        TileData(tr("Coolant"), state.telemetry.coolantTemp?.let { formatTemp(it) } ?: tr("Unknown"), Icons.Outlined.WaterDrop, scheme.tertiary),
     )
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            lockLabel(state),
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center,
-        )
-        Text(
-            if (ready) {
-                if (lockActionIsUnlock) tr("Tap to unlock") else tr("Tap to lock")
-            } else {
-                tr("Connect to Control")
-            },
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(10.dp))
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val compact = maxWidth < 380.dp
+        val sideWidth = if (compact) 72.dp else 82.dp
+        val tileHeight = if (compact) 58.dp else 64.dp
+        val tileGap = if (compact) 6.dp else 8.dp
+        val heroHalo = if (compact) 142.dp else 156.dp
+        val heroButton = if (compact) 116.dp else 128.dp
+        val titleStyle = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall
+        val subtitleStyle = if (compact) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium
+
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            HomeTelemetryColumn(leftTiles, Modifier.weight(0.88f))
-            HeroCommandButton(
-                text = if (lockActionIsUnlock) tr("Unlock") else tr("Lock"),
-                icon = if (lockActionIsUnlock) Icons.Outlined.LockOpen else Icons.Outlined.Lock,
-                enabled = ready && !lockPending,
-                loading = lockPending,
-                danger = lockActionIsUnlock,
-                modifier = Modifier.weight(1.25f),
-                onClick = { onCommand(if (lockActionIsUnlock) RemoteCommand.Unlock else RemoteCommand.Lock) },
+            HomeTelemetryColumn(
+                tiles = leftTiles,
+                width = sideWidth,
+                tileHeight = tileHeight,
+                tileGap = tileGap,
             )
-            HomeTelemetryColumn(rightTiles, Modifier.weight(0.88f))
+            Column(
+                modifier = Modifier.width(heroHalo + 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    lockLabel(state),
+                    style = titleStyle,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    if (ready) {
+                        if (lockActionIsUnlock) tr("Tap to unlock") else tr("Tap to lock")
+                    } else {
+                        tr("Connect to Control")
+                    },
+                    style = subtitleStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(if (compact) 6.dp else 8.dp))
+                HeroCommandButton(
+                    text = if (lockActionIsUnlock) tr("Unlock") else tr("Lock"),
+                    icon = if (lockActionIsUnlock) Icons.Outlined.LockOpen else Icons.Outlined.Lock,
+                    enabled = ready && !lockPending,
+                    loading = lockPending,
+                    danger = lockActionIsUnlock,
+                    buttonSize = heroButton,
+                    haloSize = heroHalo,
+                    onClick = { onCommand(if (lockActionIsUnlock) RemoteCommand.Unlock else RemoteCommand.Lock) },
+                )
+            }
+            HomeTelemetryColumn(
+                tiles = rightTiles,
+                width = sideWidth,
+                tileHeight = tileHeight,
+                tileGap = tileGap,
+            )
         }
     }
 }
@@ -3007,49 +3038,52 @@ private fun HomeControlDashboard(
 @Composable
 private fun HomeTelemetryColumn(
     tiles: List<TileData>,
+    width: Dp,
+    tileHeight: Dp,
+    tileGap: Dp,
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(9.dp),
+        modifier = modifier.width(width),
+        verticalArrangement = Arrangement.spacedBy(tileGap),
     ) {
         tiles.forEach { tile ->
-            HomeTelemetryTile(tile)
+            HomeTelemetryTile(tile, tileHeight)
         }
     }
 }
 
 @Composable
-private fun HomeTelemetryTile(tile: TileData) {
+private fun HomeTelemetryTile(tile: TileData, height: Dp) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(86.dp),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
+            .height(height),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f),
         contentColor = MaterialTheme.colorScheme.onSurface,
-        tonalElevation = 3.dp,
-        shadowElevation = 2.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f)),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 9.dp),
+            modifier = Modifier.padding(horizontal = 5.dp, vertical = 5.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Icon(tile.icon, contentDescription = null, modifier = Modifier.size(21.dp), tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.height(5.dp))
+            Icon(tile.icon, contentDescription = null, modifier = Modifier.size(16.dp), tint = tile.iconTint.copy(alpha = 0.88f))
+            Spacer(Modifier.height(2.dp))
             Text(
                 tile.label,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
             )
             Text(
                 tile.value,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -3108,14 +3142,14 @@ private fun VehicleLocationCard(state: RemoteUiState) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(158.dp),
+                        .height(132.dp),
                 ) {
                     StylizedMapPreview(location)
                 }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
@@ -3139,10 +3173,11 @@ private fun VehicleLocationCard(state: RemoteUiState) {
                         },
                         enabled = location != null,
                         shape = RoundedCornerShape(18.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
                     ) {
                         Icon(Icons.Outlined.Send, contentDescription = null, modifier = Modifier.size(17.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text(tr("Directions"))
+                        Text(tr("Directions"), maxLines = 1)
                     }
                 }
                 location?.let {
@@ -3281,6 +3316,7 @@ private data class TileData(
     val label: String,
     val value: String,
     val icon: ImageVector,
+    val iconTint: Color = Color.Unspecified,
 )
 
 @Composable
@@ -3436,6 +3472,8 @@ private fun HeroCommandButton(
     enabled: Boolean,
     loading: Boolean = false,
     danger: Boolean = false,
+    buttonSize: Dp = 142.dp,
+    haloSize: Dp = 168.dp,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
@@ -3447,41 +3485,54 @@ private fun HeroCommandButton(
         label = "hero-command-scale",
     )
     val size by animateDpAsState(
-        targetValue = if (pressed && enabled) 130.dp else 142.dp,
+        targetValue = if (pressed && enabled) buttonSize * 0.92f else buttonSize,
         animationSpec = expressiveSpring(),
         label = "hero-command-size",
     )
-    Surface(
+    Box(
         modifier = modifier
-            .size(size)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .clickable(
-                enabled = enabled,
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-            ),
-        shape = CircleShape,
-        color = if (danger) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primary,
-        contentColor = if (danger) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimary,
-        tonalElevation = 6.dp,
-        shadowElevation = 7.dp,
+            .size(haloSize),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                if (loading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(42.dp),
-                        color = if (danger) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimary,
-                        strokeWidth = 3.dp,
-                    )
-                } else {
-                    Icon(icon, contentDescription = null, modifier = Modifier.size(42.dp))
-                    Spacer(Modifier.height(10.dp))
-                    Text(text, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.66f),
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+        ) {}
+        Surface(
+            modifier = Modifier
+                .size(size)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                }
+                .clickable(
+                    enabled = enabled,
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onClick,
+                ),
+            shape = CircleShape,
+            color = if (danger) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primary,
+            contentColor = if (danger) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimary,
+            tonalElevation = 6.dp,
+            shadowElevation = 7.dp,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (loading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(36.dp),
+                            color = if (danger) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 3.dp,
+                        )
+                    } else {
+                        Icon(icon, contentDescription = null, modifier = Modifier.size(34.dp))
+                        Spacer(Modifier.height(7.dp))
+                        Text(text, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                    }
                 }
             }
         }
