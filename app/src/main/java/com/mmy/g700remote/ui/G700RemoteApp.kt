@@ -1568,46 +1568,246 @@ private fun HomeScreen(
     val lockActionIsUnlock = locked == true
     val airOn = state.telemetry.fanSpeed?.let { it > 0 }
     val lockPending = state.pendingLockCommand != null
-    LazyColumn(
-        modifier = modifier,
-        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        item {
-            HomeControlDashboard(
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val roomyHome = maxHeight >= 580.dp
+        val horizontalPadding = if (maxWidth >= 390.dp) 18.dp else 14.dp
+        val verticalPadding = when {
+            maxHeight >= 660.dp -> 20.dp
+            maxHeight >= 580.dp -> 16.dp
+            else -> 10.dp
+        }
+        val sectionGap = when {
+            maxHeight >= 660.dp -> 22.dp
+            maxHeight >= 580.dp -> 18.dp
+            else -> 12.dp
+        }
+        val locationMapHeight = when {
+            maxHeight >= 660.dp -> 140.dp
+            maxHeight >= 580.dp -> 132.dp
+            else -> 116.dp
+        }
+        val quickActions = @Composable {
+            HomeQuickActions(
                 state = state,
                 ready = ready,
-                lockActionIsUnlock = lockActionIsUnlock,
-                lockPending = lockPending,
+                airOn = airOn,
                 onCommand = onCommand,
+                onUserNotice = onUserNotice,
             )
         }
-        item {
-            VehicleLocationCard(state)
-        }
-        item {
-            Section(tr("Quick Actions")) {
-                ModeToggleGrid(
-                    toggles = listOf(
-                        ToggleSpec(
-                            label = tr("Air conditioner"),
-                            icon = Icons.Outlined.AcUnit,
-                            checked = airOn,
-                            onOn = { requestCabinAirToggle(state, onCommand, onUserNotice) },
-                            onOff = { requestCabinAirToggle(state, onCommand, onUserNotice) },
-                        ),
-                        ToggleSpec(
-                            label = tr("Hazards"),
-                            icon = Icons.Outlined.Warning,
-                            checked = state.telemetry.hazardsOn,
-                            onOn = { onCommand(RemoteCommand.Hazards(OnOffAction.On)) },
-                            onOff = { onCommand(RemoteCommand.Hazards(OnOffAction.Off)) },
-                        ),
-                    ),
-                    enabled = ready,
+
+        if (roomyHome) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = horizontalPadding, vertical = verticalPadding),
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                HomeControlDashboard(
+                    state = state,
+                    ready = ready,
+                    lockActionIsUnlock = lockActionIsUnlock,
+                    lockPending = lockPending,
+                    onCommand = onCommand,
                 )
+                VehicleLocationCard(state, mapHeight = locationMapHeight)
+                quickActions()
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = horizontalPadding, vertical = verticalPadding),
+                verticalArrangement = Arrangement.spacedBy(sectionGap),
+            ) {
+                item {
+                    HomeControlDashboard(
+                        state = state,
+                        ready = ready,
+                        lockActionIsUnlock = lockActionIsUnlock,
+                        lockPending = lockPending,
+                        onCommand = onCommand,
+                    )
+                }
+                item {
+                    VehicleLocationCard(state, mapHeight = locationMapHeight)
+                }
+                item {
+                    quickActions()
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun HomeQuickActions(
+    state: RemoteUiState,
+    ready: Boolean,
+    airOn: Boolean?,
+    onCommand: (RemoteCommand) -> Unit,
+    onUserNotice: (String) -> Unit,
+) {
+    Section(tr("Quick Actions")) {
+        ModeToggleGrid(
+            toggles = listOf(
+                ToggleSpec(
+                    label = tr("Air conditioner"),
+                    icon = Icons.Outlined.AcUnit,
+                    checked = airOn,
+                    onOn = { requestCabinAirToggle(state, onCommand, onUserNotice) },
+                    onOff = { requestCabinAirToggle(state, onCommand, onUserNotice) },
+                ),
+                ToggleSpec(
+                    label = tr("Hazards"),
+                    icon = Icons.Outlined.Warning,
+                    checked = state.telemetry.hazardsOn,
+                    onOn = { onCommand(RemoteCommand.Hazards(OnOffAction.On)) },
+                    onOff = { onCommand(RemoteCommand.Hazards(OnOffAction.Off)) },
+                ),
+            ),
+            enabled = ready,
+        )
+    }
+}
+
+@Composable
+private fun HomeControlDashboard(
+    state: RemoteUiState,
+    ready: Boolean,
+    lockActionIsUnlock: Boolean,
+    lockPending: Boolean,
+    onCommand: (RemoteCommand) -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val leftTiles = listOf(
+        TileData(tr("Battery"), state.telemetry.batterySoc?.let { "$it%" } ?: tr("Unknown"), Icons.Outlined.ElectricBolt, scheme.primary),
+        TileData(tr("Fuel"), state.telemetry.fuelPercent?.let { "$it%" } ?: tr("Unknown"), Icons.Outlined.LocalGasStation, scheme.tertiary),
+        TileData(tr("Air"), when (state.telemetry.fanSpeed?.let { it > 0 }) {
+            true -> tr("On")
+            false -> tr("Off")
+            null -> tr("Unknown")
+        }, Icons.Outlined.AcUnit, scheme.secondary),
+    )
+    val rightTiles = listOf(
+        TileData(tr("Cabin"), state.telemetry.cabinTemp?.let { formatTemp(it) } ?: tr("Unknown"), Icons.Outlined.Thermostat, scheme.secondary),
+        TileData(tr("Outside"), state.telemetry.outdoorTemp?.let { formatTemp(it) } ?: tr("Unknown"), Icons.Outlined.Air, scheme.primary),
+        TileData(tr("Coolant"), state.telemetry.coolantTemp?.let { formatTemp(it) } ?: tr("Unknown"), Icons.Outlined.WaterDrop, scheme.tertiary),
+    )
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val compact = maxWidth < 380.dp
+        val sideWidth = if (compact) 68.dp else 76.dp
+        val tileHeight = if (compact) 62.dp else 68.dp
+        val tileGap = if (compact) 10.dp else 12.dp
+        val heroHalo = if (compact) 142.dp else 156.dp
+        val heroButton = if (compact) 116.dp else 128.dp
+        val titleStyle = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall
+        val subtitleStyle = if (compact) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            HomeTelemetryColumn(
+                tiles = leftTiles,
+                width = sideWidth,
+                tileHeight = tileHeight,
+                tileGap = tileGap,
+            )
+            Column(
+                modifier = Modifier.width(heroHalo + 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    lockLabel(state),
+                    style = titleStyle,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    if (ready) {
+                        if (lockActionIsUnlock) tr("Tap to unlock") else tr("Tap to lock")
+                    } else {
+                        tr("Connect to Control")
+                    },
+                    style = subtitleStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(if (compact) 8.dp else 10.dp))
+                HeroCommandButton(
+                    text = if (lockActionIsUnlock) tr("Unlock") else tr("Lock"),
+                    icon = if (lockActionIsUnlock) Icons.Outlined.LockOpen else Icons.Outlined.Lock,
+                    enabled = ready && !lockPending,
+                    loading = lockPending,
+                    danger = lockActionIsUnlock,
+                    buttonSize = heroButton,
+                    haloSize = heroHalo,
+                    onClick = { onCommand(if (lockActionIsUnlock) RemoteCommand.Unlock else RemoteCommand.Lock) },
+                )
+            }
+            HomeTelemetryColumn(
+                tiles = rightTiles,
+                width = sideWidth,
+                tileHeight = tileHeight,
+                tileGap = tileGap,
+            )
+        }
+    }
+}
+
+@Composable
+private fun HomeTelemetryColumn(
+    tiles: List<TileData>,
+    width: Dp,
+    tileHeight: Dp,
+    tileGap: Dp,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.width(width),
+        verticalArrangement = Arrangement.spacedBy(tileGap),
+    ) {
+        tiles.forEach { tile ->
+            HomeTelemetryTile(tile, tileHeight)
+        }
+    }
+}
+
+@Composable
+private fun HomeTelemetryTile(tile: TileData, height: Dp) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(height)
+            .padding(horizontal = 2.dp, vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(tile.icon, contentDescription = null, modifier = Modifier.size(18.dp), tint = tile.iconTint.copy(alpha = 0.92f))
+        Spacer(Modifier.height(4.dp))
+        Text(
+            tile.label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.92f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            tile.value,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
@@ -2945,156 +3145,7 @@ private fun ActionBoxGrid(
 }
 
 @Composable
-private fun HomeControlDashboard(
-    state: RemoteUiState,
-    ready: Boolean,
-    lockActionIsUnlock: Boolean,
-    lockPending: Boolean,
-    onCommand: (RemoteCommand) -> Unit,
-) {
-    val scheme = MaterialTheme.colorScheme
-    val leftTiles = listOf(
-        TileData(tr("Battery"), state.telemetry.batterySoc?.let { "$it%" } ?: tr("Unknown"), Icons.Outlined.ElectricBolt, scheme.primary),
-        TileData(tr("Fuel"), state.telemetry.fuelPercent?.let { "$it%" } ?: tr("Unknown"), Icons.Outlined.LocalGasStation, scheme.tertiary),
-        TileData(tr("Air"), when (state.telemetry.fanSpeed?.let { it > 0 }) {
-            true -> tr("On")
-            false -> tr("Off")
-            null -> tr("Unknown")
-        }, Icons.Outlined.AcUnit, scheme.secondary),
-    )
-    val rightTiles = listOf(
-        TileData(tr("Cabin"), state.telemetry.cabinTemp?.let { formatTemp(it) } ?: tr("Unknown"), Icons.Outlined.Thermostat, scheme.secondary),
-        TileData(tr("Outside"), state.telemetry.outdoorTemp?.let { formatTemp(it) } ?: tr("Unknown"), Icons.Outlined.Air, scheme.primary),
-        TileData(tr("Coolant"), state.telemetry.coolantTemp?.let { formatTemp(it) } ?: tr("Unknown"), Icons.Outlined.WaterDrop, scheme.tertiary),
-    )
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val compact = maxWidth < 380.dp
-        val sideWidth = if (compact) 72.dp else 82.dp
-        val tileHeight = if (compact) 58.dp else 64.dp
-        val tileGap = if (compact) 6.dp else 8.dp
-        val heroHalo = if (compact) 142.dp else 156.dp
-        val heroButton = if (compact) 116.dp else 128.dp
-        val titleStyle = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall
-        val subtitleStyle = if (compact) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            HomeTelemetryColumn(
-                tiles = leftTiles,
-                width = sideWidth,
-                tileHeight = tileHeight,
-                tileGap = tileGap,
-            )
-            Column(
-                modifier = Modifier.width(heroHalo + 4.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Text(
-                    lockLabel(state),
-                    style = titleStyle,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    if (ready) {
-                        if (lockActionIsUnlock) tr("Tap to unlock") else tr("Tap to lock")
-                    } else {
-                        tr("Connect to Control")
-                    },
-                    style = subtitleStyle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(if (compact) 6.dp else 8.dp))
-                HeroCommandButton(
-                    text = if (lockActionIsUnlock) tr("Unlock") else tr("Lock"),
-                    icon = if (lockActionIsUnlock) Icons.Outlined.LockOpen else Icons.Outlined.Lock,
-                    enabled = ready && !lockPending,
-                    loading = lockPending,
-                    danger = lockActionIsUnlock,
-                    buttonSize = heroButton,
-                    haloSize = heroHalo,
-                    onClick = { onCommand(if (lockActionIsUnlock) RemoteCommand.Unlock else RemoteCommand.Lock) },
-                )
-            }
-            HomeTelemetryColumn(
-                tiles = rightTiles,
-                width = sideWidth,
-                tileHeight = tileHeight,
-                tileGap = tileGap,
-            )
-        }
-    }
-}
-
-@Composable
-private fun HomeTelemetryColumn(
-    tiles: List<TileData>,
-    width: Dp,
-    tileHeight: Dp,
-    tileGap: Dp,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier.width(width),
-        verticalArrangement = Arrangement.spacedBy(tileGap),
-    ) {
-        tiles.forEach { tile ->
-            HomeTelemetryTile(tile, tileHeight)
-        }
-    }
-}
-
-@Composable
-private fun HomeTelemetryTile(tile: TileData, height: Dp) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(height),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f),
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f)),
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 5.dp, vertical = 5.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Icon(tile.icon, contentDescription = null, modifier = Modifier.size(16.dp), tint = tile.iconTint.copy(alpha = 0.88f))
-            Spacer(Modifier.height(2.dp))
-            Text(
-                tile.label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-            )
-            Text(
-                tile.value,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-            )
-        }
-    }
-}
-
-@Composable
-private fun VehicleLocationCard(state: RemoteUiState) {
+private fun VehicleLocationCard(state: RemoteUiState, mapHeight: Dp = 132.dp) {
     val location = state.carLocation
     val uriHandler = LocalUriHandler.current
     val recent = location != null && System.currentTimeMillis() - location.updatedAtMillis < 120_000L
@@ -3142,7 +3193,7 @@ private fun VehicleLocationCard(state: RemoteUiState) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(132.dp),
+                        .height(mapHeight),
                 ) {
                     StylizedMapPreview(location)
                 }
