@@ -119,7 +119,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -1153,11 +1152,6 @@ private fun MainRemoteScaffold(
     contentPadding: PaddingValues,
 ) {
     var tab by rememberSaveable { mutableStateOf(AppTab.Home) }
-    var pullRefreshing by remember { mutableStateOf(false) }
-    val runRefresh: () -> Unit = {
-        pullRefreshing = true
-        onRefresh()
-    }
     BackHandler(enabled = tab != AppTab.Home) {
         tab = AppTab.Home
     }
@@ -1176,12 +1170,6 @@ private fun MainRemoteScaffold(
     LaunchedEffect(tab) {
         G700Analytics.screen(tab.label)
     }
-    LaunchedEffect(pullRefreshing, state.lastStatusRefreshMillis, state.connectionState) {
-        if (pullRefreshing) {
-            delay(900)
-            pullRefreshing = false
-        }
-    }
     Scaffold(
         modifier = Modifier.padding(contentPadding),
         containerColor = MaterialTheme.colorScheme.background,
@@ -1190,7 +1178,7 @@ private fun MainRemoteScaffold(
                 state = state,
                 onHome = { tab = AppTab.Home },
                 onReconnect = onReconnect,
-                onRefresh = runRefresh,
+                onRefresh = onRefresh,
                 onOpenHistory = { tab = AppTab.NavigationHistory },
                 onOpenSettings = { tab = AppTab.Settings },
             )
@@ -1213,8 +1201,6 @@ private fun MainRemoteScaffold(
                     onCommand = onCommand,
                     onUserNotice = onUserNotice,
                     onOpenMap = { tab = AppTab.VehicleMap },
-                    isRefreshing = pullRefreshing,
-                    onRefresh = runRefresh,
                     modifier = screenModifier,
                 )
                 AppTab.Climate -> ClimateScreen(state, onCommand, onUserNotice, screenModifier)
@@ -1276,17 +1262,7 @@ private fun MainRemoteScaffold(
             label = "main-tab-content",
         ) { activeTab ->
             val screenModifier = Modifier.fillMaxSize()
-            if (activeTab == AppTab.VehicleMap || activeTab == AppTab.Home) {
-                screenContent(activeTab, screenModifier)
-            } else {
-                PullToRefreshBox(
-                    isRefreshing = pullRefreshing && tab != AppTab.VehicleMap,
-                    onRefresh = runRefresh,
-                    modifier = Modifier.fillMaxSize(),
-                ) {
-                    screenContent(activeTab, screenModifier)
-                }
-            }
+            screenContent(activeTab, screenModifier)
         }
     }
 }
@@ -1691,8 +1667,6 @@ private fun HomeScreen(
     onCommand: (RemoteCommand) -> Unit,
     onUserNotice: (String) -> Unit,
     onOpenMap: () -> Unit,
-    isRefreshing: Boolean,
-    onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val ready = state.connectionState is RemoteConnectionState.Ready
@@ -1728,19 +1702,13 @@ private fun HomeScreen(
             )
         }
         val homeControl = @Composable {
-            PullToRefreshBox(
-                isRefreshing = isRefreshing,
-                onRefresh = onRefresh,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                HomeControlDashboard(
-                    state = state,
-                    ready = ready,
-                    lockActionIsUnlock = lockActionIsUnlock,
-                    lockPending = lockPending,
-                    onCommand = onCommand,
-                )
-            }
+            HomeControlDashboard(
+                state = state,
+                ready = ready,
+                lockActionIsUnlock = lockActionIsUnlock,
+                lockPending = lockPending,
+                onCommand = onCommand,
+            )
         }
 
         if (roomyHome) {
