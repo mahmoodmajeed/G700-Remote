@@ -1,6 +1,6 @@
 # Release And Play Store Notes
 
-These notes prepare the v1.6.1 baseline for future automated builds and Play Store work.
+These notes prepare the v1.6.2 baseline for future automated builds and Play Store work.
 
 ## Local Verification
 
@@ -16,8 +16,8 @@ Generated artifacts are under `app/build/outputs/` and should not be committed.
 
 Current baseline:
 
-- `versionName = "1.6.1"`
-- `versionCode = 23`
+- `versionName = "1.6.2"`
+- `versionCode = 24`
 
 For future releases, increase `versionCode` for every Play Store upload. Keep `versionName` user-readable and match release notes.
 
@@ -40,7 +40,8 @@ Current release-signing certificate SHA-256 for Firebase Android app setup and F
 
 ## Firebase Release Setup
 
-- `app/google-services.json` is required for Firebase SDK initialization and is intentionally committed because Firebase Android config is not a signing secret.
+- `app/google-services.json` is required for Firebase SDK initialization, but the real file is local-only and ignored by Git. Use `app/google-services.example.json` as a shape reference.
+- The Maps SDK key is injected through the Google Maps Secrets Gradle Plugin from `local.properties` as `MAPS_API_KEY`. Do not commit the real key.
 - Firebase Analytics, Crashlytics, Performance Monitoring, App Check with Play Integrity, and Cloud Messaging are configured in the app module.
 - In Firebase Console, add the SHA-256 fingerprint above to the Android app, then enable App Check with the Play Integrity provider.
 - In Google Play Console / Play Integrity, ensure package `com.mmy.g700remote` and the release certificate fingerprint match the distributed APK signing lineage.

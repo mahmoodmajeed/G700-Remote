@@ -11,6 +11,8 @@ externalNativeBuild/
 .idea/
 *.iml
 local.properties
+secrets.properties
+app/google-services.json
 
 # Generated packages and signing by-products
 *.apk

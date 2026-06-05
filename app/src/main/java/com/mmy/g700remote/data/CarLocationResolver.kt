@@ -61,15 +61,32 @@ class CarLocationResolver(context: Context) : CarLocationProvider {
             val geocoder = Geocoder(appContext, Locale.getDefault())
             val address = geocoder.getFromLocation(lat, lon, 1)?.firstOrNull() ?: return null
             val parts = listOfNotNull(
-                address.featureName?.takeUnless { it.matches(Regex("""\d+[A-Z]?""")) },
                 address.thoroughfare,
+                address.subThoroughfare,
+                address.featureName,
                 address.subLocality,
                 address.locality,
-                address.countryName,
+                address.adminArea,
             )
                 .map { it.trim() }
-                .filter { it.isNotBlank() }
+                .filter { it.isUsefulAddressPart() }
                 .distinct()
-            parts.takeIf { it.isNotEmpty() }?.joinToString(", ") ?: address.getAddressLine(0)
+            parts.takeIf { it.isNotEmpty() }?.joinToString(", ") ?: address.getAddressLine(0)?.cleanResolvedAddress()
         }.getOrNull()
+
+    private fun String.cleanResolvedAddress(): String? =
+        split(',')
+            .map { it.trim() }
+            .filter { it.isUsefulAddressPart() }
+            .distinct()
+            .joinToString(", ")
+            .ifBlank { null }
+
+    private fun String.isUsefulAddressPart(): Boolean {
+        if (isBlank()) return false
+        if (equals("Bahrain", ignoreCase = true) || equals("Kingdom of Bahrain", ignoreCase = true)) return false
+        if (matches(Regex("""\d+[A-Z]?""", RegexOption.IGNORE_CASE))) return false
+        if (matches(Regex("""^[23456789CFGHJMPQRVWX]{4,}\+[23456789CFGHJMPQRVWX]{2,}.*$""", RegexOption.IGNORE_CASE))) return false
+        return true
+    }
 }
