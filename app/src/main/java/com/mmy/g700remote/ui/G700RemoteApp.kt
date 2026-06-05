@@ -16,6 +16,7 @@ import android.location.Location
 import android.location.LocationManager
 import android.net.Uri
 import android.os.CancellationSignal
+import android.view.MotionEvent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -145,12 +146,14 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -1712,22 +1715,15 @@ private fun HomeScreen(
         }
 
         if (roomyHome) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = horizontalPadding, vertical = verticalPadding),
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = horizontalPadding, vertical = verticalPadding),
+                verticalArrangement = Arrangement.SpaceBetween,
             ) {
-                item {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .fillParentMaxHeight(),
-                        verticalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        homeControl()
-                        VehicleLocationCard(state, mapHeight = locationMapHeight, onOpenMap = onOpenMap)
-                        quickActions()
-                    }
-                }
+                homeControl()
+                VehicleLocationCard(state, mapHeight = locationMapHeight, onOpenMap = onOpenMap)
+                quickActions()
             }
         } else {
             LazyColumn(
@@ -3811,6 +3807,22 @@ private fun VehicleMapContent(
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(carPoint, zoom)
     }
+    val view = LocalView.current
+    val mapGestureModifier = if (compact) {
+        Modifier.pointerInteropFilter { event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN,
+                MotionEvent.ACTION_POINTER_DOWN,
+                MotionEvent.ACTION_MOVE -> view.parent?.requestDisallowInterceptTouchEvent(true)
+                MotionEvent.ACTION_UP,
+                MotionEvent.ACTION_POINTER_UP,
+                MotionEvent.ACTION_CANCEL -> view.parent?.requestDisallowInterceptTouchEvent(false)
+            }
+            false
+        }
+    } else {
+        Modifier
+    }
     LaunchedEffect(mapLoaded, carPoint, phonePoint, zoom, compact) {
         if (!mapLoaded) return@LaunchedEffect
         val phone = phonePoint
@@ -3827,7 +3839,7 @@ private fun VehicleMapContent(
     }
     val markerState = remember(location.lat, location.lon) { MarkerState(carPoint) }
     GoogleMap(
-        modifier = modifier,
+        modifier = modifier.then(mapGestureModifier),
         cameraPositionState = cameraPositionState,
         properties = MapProperties(
             isMyLocationEnabled = showPhoneLocation,
