@@ -1,9 +1,17 @@
 ﻿package com.mmy.g700remote.ui
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas as AndroidCanvas
+import android.graphics.Paint
+import android.graphics.RectF
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
@@ -43,10 +51,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AcUnit
 import androidx.compose.material.icons.outlined.Air
+import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Bluetooth
 import androidx.compose.material.icons.outlined.BluetoothSearching
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DeleteSweep
@@ -60,6 +70,7 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.PowerSettingsNew
+import androidx.compose.material.icons.outlined.OpenInFull
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Send
@@ -94,6 +105,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -114,6 +126,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalContext
@@ -133,6 +146,17 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.BitmapDescriptor
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.MapProperties
+import com.google.maps.android.compose.MapUiSettings
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.MarkerState
+import com.google.maps.android.compose.rememberCameraPositionState
 import com.mmy.g700remote.R
 import com.mmy.g700remote.BuildConfig
 import com.mmy.g700remote.ConnectedCarNotificationService
@@ -174,6 +198,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private val LocalAppLanguage = staticCompositionLocalOf { AppLanguage.English }
@@ -1040,6 +1065,7 @@ private fun SetupGuideLine(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainRemoteScaffold(
     state: RemoteUiState,
@@ -1080,6 +1106,11 @@ private fun MainRemoteScaffold(
     contentPadding: PaddingValues,
 ) {
     var tab by rememberSaveable { mutableStateOf(AppTab.Home) }
+    var pullRefreshing by remember { mutableStateOf(false) }
+    val runRefresh: () -> Unit = {
+        pullRefreshing = true
+        onRefresh()
+    }
     BackHandler(enabled = tab != AppTab.Home) {
         tab = AppTab.Home
     }
@@ -1098,6 +1129,12 @@ private fun MainRemoteScaffold(
     LaunchedEffect(tab) {
         G700Analytics.screen(tab.label)
     }
+    LaunchedEffect(pullRefreshing, state.lastStatusRefreshMillis, state.connectionState) {
+        if (pullRefreshing) {
+            delay(900)
+            pullRefreshing = false
+        }
+    }
     Scaffold(
         modifier = Modifier.padding(contentPadding),
         containerColor = MaterialTheme.colorScheme.background,
@@ -1106,14 +1143,14 @@ private fun MainRemoteScaffold(
                 state = state,
                 onHome = { tab = AppTab.Home },
                 onReconnect = onReconnect,
-                onRefresh = onRefresh,
+                onRefresh = runRefresh,
                 onOpenHistory = { tab = AppTab.NavigationHistory },
                 onOpenSettings = { tab = AppTab.Settings },
             )
         },
         bottomBar = {
             FloatingNavBar(
-                selected = tab,
+                selected = if (tab == AppTab.VehicleMap) AppTab.Home else tab,
                 onSelected = { tab = it },
             )
         },
@@ -1122,48 +1159,66 @@ private fun MainRemoteScaffold(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .padding(padding)
-        when (tab) {
-            AppTab.Home -> HomeScreen(state, onCommand, onUserNotice, modifier)
-            AppTab.Climate -> ClimateScreen(state, onCommand, onUserNotice, modifier)
-            AppTab.Openings -> OpeningsScreen(state, onCommand, modifier)
-            AppTab.Charging -> ChargingScreen(state, onCommand, modifier)
-            AppTab.Lighting -> LightingScreen(state, onCommand, modifier)
-            AppTab.NavigationHistory -> NavigationHistoryScreen(
-                state = state,
-                onResendNavigationHistory = onResendNavigationHistory,
-                onDelete = onDeleteNavigationHistory,
-                onClearAll = onClearNavigationHistory,
-                modifier = modifier,
-            )
-            AppTab.Settings -> SettingsScreen(
-                state = state,
-                onCommand = onCommand,
-                onClearPairing = onClearPairing,
-                onPairingCodeChanged = onPairingCodeChanged,
-                onClearNavigationHistory = onClearNavigationHistory,
-                onBleEnabledChanged = onBleEnabledChanged,
-                onLanEnabledChanged = onLanEnabledChanged,
-                onConnectionPreferenceChanged = onConnectionPreferenceChanged,
-                onAppLanguageChanged = onAppLanguageChanged,
-                onAppThemeChanged = onAppThemeChanged,
-                onAppColorModeChanged = onAppColorModeChanged,
-                onAppIconThemeChanged = onAppIconThemeChanged,
-                onRegionalFeaturesChanged = onRegionalFeaturesChanged,
-                onLocalAuthChanged = onLocalAuthChanged,
-                onLockMappingChanged = onLockMappingChanged,
-                onLoggingChanged = onLoggingChanged,
-                onConnectedNotificationChanged = onConnectedNotificationChanged,
-                onBleWakeEnabledChanged = onBleWakeEnabledChanged,
-                onCarLocationPreferenceChanged = onCarLocationPreferenceChanged,
-                updateState = updateState,
-                onCheckForUpdates = onCheckForUpdates,
-                onDownloadUpdate = onDownloadUpdate,
-                onShowReleaseNotes = onShowReleaseNotes,
-                onShareLog = onShareLog,
-                onDisconnect = onDisconnect,
-                onDemoModeChanged = onDemoModeChanged,
-                modifier = modifier,
-            )
+        PullToRefreshBox(
+            isRefreshing = pullRefreshing,
+            onRefresh = runRefresh,
+            modifier = modifier,
+        ) {
+            val screenModifier = Modifier.fillMaxSize()
+            when (tab) {
+                AppTab.Home -> HomeScreen(
+                    state = state,
+                    onCommand = onCommand,
+                    onUserNotice = onUserNotice,
+                    onOpenMap = { tab = AppTab.VehicleMap },
+                    modifier = screenModifier,
+                )
+                AppTab.Climate -> ClimateScreen(state, onCommand, onUserNotice, screenModifier)
+                AppTab.Openings -> OpeningsScreen(state, onCommand, screenModifier)
+                AppTab.Charging -> ChargingScreen(state, onCommand, screenModifier)
+                AppTab.Lighting -> LightingScreen(state, onCommand, screenModifier)
+                AppTab.VehicleMap -> VehicleMapScreen(
+                    state = state,
+                    onBack = { tab = AppTab.Home },
+                    modifier = screenModifier,
+                )
+                AppTab.NavigationHistory -> NavigationHistoryScreen(
+                    state = state,
+                    onResendNavigationHistory = onResendNavigationHistory,
+                    onDelete = onDeleteNavigationHistory,
+                    onClearAll = onClearNavigationHistory,
+                    modifier = screenModifier,
+                )
+                AppTab.Settings -> SettingsScreen(
+                    state = state,
+                    onCommand = onCommand,
+                    onClearPairing = onClearPairing,
+                    onPairingCodeChanged = onPairingCodeChanged,
+                    onClearNavigationHistory = onClearNavigationHistory,
+                    onBleEnabledChanged = onBleEnabledChanged,
+                    onLanEnabledChanged = onLanEnabledChanged,
+                    onConnectionPreferenceChanged = onConnectionPreferenceChanged,
+                    onAppLanguageChanged = onAppLanguageChanged,
+                    onAppThemeChanged = onAppThemeChanged,
+                    onAppColorModeChanged = onAppColorModeChanged,
+                    onAppIconThemeChanged = onAppIconThemeChanged,
+                    onRegionalFeaturesChanged = onRegionalFeaturesChanged,
+                    onLocalAuthChanged = onLocalAuthChanged,
+                    onLockMappingChanged = onLockMappingChanged,
+                    onLoggingChanged = onLoggingChanged,
+                    onConnectedNotificationChanged = onConnectedNotificationChanged,
+                    onBleWakeEnabledChanged = onBleWakeEnabledChanged,
+                    onCarLocationPreferenceChanged = onCarLocationPreferenceChanged,
+                    updateState = updateState,
+                    onCheckForUpdates = onCheckForUpdates,
+                    onDownloadUpdate = onDownloadUpdate,
+                    onShowReleaseNotes = onShowReleaseNotes,
+                    onShareLog = onShareLog,
+                    onDisconnect = onDisconnect,
+                    onDemoModeChanged = onDemoModeChanged,
+                    modifier = screenModifier,
+                )
+            }
         }
     }
 }
@@ -1238,6 +1293,11 @@ private fun HeaderStatusAction(
     }
     val isConnected = state.connectionState is RemoteConnectionState.Ready
     val transportIcon = state.headerTransportIcon()
+    val statusIcon = when {
+        isConnected -> transportIcon
+        state.connectionState is RemoteConnectionState.Error || state.connectionState == RemoteConnectionState.Disconnected -> Icons.Outlined.Link
+        else -> null
+    }
     Column(
         modifier = modifier
             .graphicsLayer {
@@ -1262,16 +1322,16 @@ private fun HeaderStatusAction(
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                state.connectionState.label(),
+                headerStatusLabel(state),
                 style = MaterialTheme.typography.titleSmall.copy(lineHeight = 18.sp),
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (isConnected) {
+            statusIcon?.let {
                 Spacer(Modifier.width(6.dp))
                 Icon(
-                    transportIcon,
+                    it,
                     contentDescription = null,
                     modifier = Modifier.size(15.dp),
                     tint = MaterialTheme.colorScheme.onSurface,
@@ -1326,6 +1386,7 @@ private fun JetourHeaderMark(onClick: () -> Unit) {
 private fun ExpressiveIconButton(
     onClick: () -> Unit,
     enabled: Boolean = true,
+    modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -1336,7 +1397,7 @@ private fun ExpressiveIconButton(
         label = "icon-press-scale",
     )
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .size(44.dp)
             .graphicsLayer {
                 scaleX = scale
@@ -1561,6 +1622,7 @@ private fun HomeScreen(
     state: RemoteUiState,
     onCommand: (RemoteCommand) -> Unit,
     onUserNotice: (String) -> Unit,
+    onOpenMap: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val ready = state.connectionState is RemoteConnectionState.Ready
@@ -1610,7 +1672,7 @@ private fun HomeScreen(
                     lockPending = lockPending,
                     onCommand = onCommand,
                 )
-                VehicleLocationCard(state, mapHeight = locationMapHeight)
+                VehicleLocationCard(state, mapHeight = locationMapHeight, onOpenMap = onOpenMap)
                 quickActions()
             }
         } else {
@@ -1629,7 +1691,7 @@ private fun HomeScreen(
                     )
                 }
                 item {
-                    VehicleLocationCard(state, mapHeight = locationMapHeight)
+                    VehicleLocationCard(state, mapHeight = locationMapHeight, onOpenMap = onOpenMap)
                 }
                 item {
                     quickActions()
@@ -1715,9 +1777,9 @@ private fun HomeControlDashboard(
         val maxSide = if (compact) 94.dp else 106.dp
         val sideWidth = (((maxWidth - centerWidth - sideGutter).value / 2f).dp).coerceIn(minSide, maxSide)
         val tileHeight = when {
-            narrow -> 62.dp
-            compact -> 68.dp
-            else -> 72.dp
+            narrow -> 58.dp
+            compact -> 64.dp
+            else -> 68.dp
         }
         val tileGap = when {
             narrow -> 8.dp
@@ -1819,17 +1881,17 @@ private fun HomeTelemetryTile(tile: TileData, height: Dp) {
     ) {
         val tight = maxWidth < 84.dp || maxHeight <= 64.dp
         val valueNeedsFit = tile.value.length > 7
-        val iconSize = if (tight) 16.dp else 18.dp
+        val iconSize = if (tight) 15.dp else 17.dp
         val labelStyle = MaterialTheme.typography.labelSmall.copy(
-            fontSize = if (tight) 11.sp else 12.sp,
-            lineHeight = 14.sp,
+            fontSize = if (tight) 10.sp else 11.sp,
+            lineHeight = 13.sp,
         )
         val valueStyle = MaterialTheme.typography.bodyLarge.copy(
             fontSize = when {
-                tight || valueNeedsFit -> 16.sp
-                else -> 18.sp
+                tight || valueNeedsFit -> 15.sp
+                else -> 17.sp
             },
-            lineHeight = 20.sp,
+            lineHeight = 19.sp,
         )
         Column(
             modifier = Modifier.fillMaxWidth(),
@@ -3210,10 +3272,15 @@ private fun ActionBoxGrid(
 }
 
 @Composable
-private fun VehicleLocationCard(state: RemoteUiState, mapHeight: Dp = 132.dp) {
+private fun VehicleLocationCard(
+    state: RemoteUiState,
+    mapHeight: Dp = 132.dp,
+    onOpenMap: () -> Unit,
+) {
     val location = state.carLocation
-    val uriHandler = LocalUriHandler.current
-    val recent = location != null && System.currentTimeMillis() - location.updatedAtMillis < 120_000L
+    val context = LocalContext.current
+    val recent = location != null && System.currentTimeMillis() - location.updatedAtMillis < 60_000L
+    val displayAddress = location?.let { humanReadableLocationAddress(it) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -3260,7 +3327,23 @@ private fun VehicleLocationCard(state: RemoteUiState, mapHeight: Dp = 132.dp) {
                         .fillMaxWidth()
                         .height(mapHeight),
                 ) {
-                    StylizedMapPreview(location)
+                    VehicleMapContent(
+                        location = location,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)),
+                        zoom = 17f,
+                        compact = true,
+                    )
+                    ExpressiveIconButton(
+                        onClick = onOpenMap,
+                        enabled = location != null,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp),
+                    ) {
+                        Icon(Icons.Outlined.OpenInFull, contentDescription = tr("Expand map"), modifier = Modifier.size(18.dp))
+                    }
                 }
                 Row(
                     modifier = Modifier
@@ -3270,21 +3353,32 @@ private fun VehicleLocationCard(state: RemoteUiState, mapHeight: Dp = 132.dp) {
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Icon(Icons.Outlined.DirectionsCar, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Text(
-                        location?.address
-                            ?: location?.let { "%.5f, %.5f".format(Locale.US, it.lat, it.lon) }
-                            ?: tr("Location will appear after the car reports it."),
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = if (location?.address != null) FontWeight.SemiBold else FontWeight.Normal,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            displayAddress
+                                ?: location?.let { "%.5f, %.5f".format(Locale.US, it.lat, it.lon) }
+                                ?: tr("Location will appear after the car reports it."),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = if (displayAddress != null) FontWeight.SemiBold else FontWeight.Normal,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        location?.let {
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                "${tr("Source")}: ${carLocationSourceLabel(it.source)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
                     OutlinedButton(
                         onClick = {
                             location?.let {
                                 G700Analytics.mapOpened(it.source.name)
-                                openLocationInMaps(uriHandler, it)
+                                openDirectionsToLocation(context, it)
                             }
                         },
                         enabled = location != null,
@@ -3296,18 +3390,169 @@ private fun VehicleLocationCard(state: RemoteUiState, mapHeight: Dp = 132.dp) {
                         Text(tr("Directions"), maxLines = 1)
                     }
                 }
-                location?.let {
+            }
+        }
+    }
+}
+
+@Composable
+private fun VehicleMapScreen(
+    state: RemoteUiState,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val location = state.carLocation
+    val context = LocalContext.current
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                ExpressiveIconButton(onClick = onBack) {
+                    Icon(Icons.Outlined.ArrowBack, contentDescription = tr("Back"))
+                }
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        when (it.source) {
-                            CarLocationSource.DisplayMirror -> tr("Source: car")
-                            CarLocationSource.PhoneBle -> tr("Source: phone near car")
-                        },
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-                        style = MaterialTheme.typography.labelSmall,
+                        tr("Vehicle map"),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        location?.let { formatLocationUpdatedText(it.updatedAtMillis, System.currentTimeMillis() - it.updatedAtMillis < 60_000L) }
+                            ?: tr("No location yet"),
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
+        }
+        item {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(360.dp),
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                tonalElevation = 4.dp,
+                shadowElevation = 3.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.32f)),
+            ) {
+                VehicleMapContent(
+                    location = location,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(28.dp)),
+                    zoom = 17f,
+                    compact = false,
+                )
+            }
+        }
+        item {
+            Surface(
+                shape = RoundedCornerShape(26.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                tonalElevation = 3.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    if (location == null) {
+                        Text(
+                            tr("Location will appear after the car reports it."),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        val address = humanReadableLocationAddress(location)
+                        Text(
+                            address ?: tr("Vehicle location"),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            ) {
+                                Text(
+                                    carLocationSourceLabel(location.source),
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
+                            Text(
+                                formatLocationUpdatedText(
+                                    location.updatedAtMillis,
+                                    System.currentTimeMillis() - location.updatedAtMillis < 60_000L,
+                                ),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        CoordinateCopyRow(tr("Latitude"), "%.6f".format(Locale.US, location.lat), context)
+                        CoordinateCopyRow(tr("Longitude"), "%.6f".format(Locale.US, location.lon), context)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            val coordinatesLabel = tr("Coordinates")
+                            val copiedLabel = tr("Copied")
+                            Button(
+                                onClick = { openDirectionsToLocation(context, location) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(18.dp),
+                            ) {
+                                Icon(Icons.Outlined.Send, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(tr("Directions"))
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    copyToClipboard(
+                                        context,
+                                        coordinatesLabel,
+                                        "%.6f, %.6f".format(Locale.US, location.lat, location.lon),
+                                        copiedLabel,
+                                    )
+                                },
+                                shape = RoundedCornerShape(18.dp),
+                            ) {
+                                Icon(Icons.Outlined.ContentCopy, contentDescription = tr("Copy"))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CoordinateCopyRow(label: String, value: String, context: Context) {
+    val copiedLabel = tr("Copied")
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(label, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            Text(value, fontWeight = FontWeight.SemiBold)
+        }
+        IconButton(onClick = { copyToClipboard(context, label, value, copiedLabel) }) {
+            Icon(Icons.Outlined.ContentCopy, contentDescription = tr("Copy"))
         }
     }
 }
@@ -3392,15 +3637,146 @@ private fun StylizedMapPreview(location: CarLocation?) {
     }
 }
 
-private fun openLocationInMaps(uriHandler: androidx.compose.ui.platform.UriHandler, location: CarLocation) {
-    val label = Uri.encode(location.address ?: "G700")
-    val uri = "geo:${location.lat},${location.lon}?q=${location.lat},${location.lon}($label)"
-    uriHandler.openUri(uri)
+@Composable
+private fun VehicleMapContent(
+    location: CarLocation?,
+    modifier: Modifier = Modifier,
+    zoom: Float,
+    compact: Boolean,
+) {
+    if (location == null) {
+        StylizedMapPreview(null)
+        return
+    }
+    val carPoint = remember(location.lat, location.lon) { LatLng(location.lat, location.lon) }
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(carPoint, zoom)
+    }
+    LaunchedEffect(location.lat, location.lon, zoom) {
+        cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(carPoint, zoom), durationMs = 650)
+    }
+    val markerState = remember(location.lat, location.lon) { MarkerState(carPoint) }
+    val markerIcon = rememberCarMarkerIcon()
+    GoogleMap(
+        modifier = modifier,
+        cameraPositionState = cameraPositionState,
+        properties = MapProperties(
+            minZoomPreference = 12f,
+            maxZoomPreference = 21f,
+        ),
+        uiSettings = MapUiSettings(
+            compassEnabled = !compact,
+            indoorLevelPickerEnabled = false,
+            mapToolbarEnabled = false,
+            myLocationButtonEnabled = false,
+            rotationGesturesEnabled = true,
+            scrollGesturesEnabled = true,
+            tiltGesturesEnabled = true,
+            zoomControlsEnabled = !compact,
+            zoomGesturesEnabled = true,
+        ),
+    ) {
+        Marker(
+            state = markerState,
+            title = "G700",
+            snippet = humanReadableLocationAddress(location),
+            icon = markerIcon,
+            anchor = androidx.compose.ui.geometry.Offset(0.5f, 0.5f),
+        )
+    }
+}
+
+@Composable
+private fun rememberCarMarkerIcon(): BitmapDescriptor {
+    val background = MaterialTheme.colorScheme.primary.toArgb()
+    val foreground = MaterialTheme.colorScheme.onPrimary.toArgb()
+    return remember(background, foreground) {
+        createCarMarkerIcon(background, foreground)
+    }
+}
+
+private fun createCarMarkerIcon(background: Int, foreground: Int): BitmapDescriptor {
+    val bitmap = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888)
+    val canvas = AndroidCanvas(bitmap)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    paint.color = background
+    paint.alpha = 58
+    canvas.drawCircle(48f, 48f, 44f, paint)
+    paint.alpha = 255
+    canvas.drawCircle(48f, 48f, 31f, paint)
+    paint.color = foreground
+    paint.style = Paint.Style.STROKE
+    paint.strokeWidth = 4.4f
+    paint.strokeCap = Paint.Cap.ROUND
+    paint.strokeJoin = Paint.Join.ROUND
+    canvas.drawRoundRect(RectF(30f, 43f, 66f, 61f), 6f, 6f, paint)
+    canvas.drawLine(36f, 43f, 42f, 35f, paint)
+    canvas.drawLine(42f, 35f, 55f, 35f, paint)
+    canvas.drawLine(55f, 35f, 61f, 43f, paint)
+    paint.style = Paint.Style.FILL
+    canvas.drawCircle(37f, 63f, 3.8f, paint)
+    canvas.drawCircle(59f, 63f, 3.8f, paint)
+    return BitmapDescriptorFactory.fromBitmap(bitmap)
+}
+
+private fun openDirectionsToLocation(context: Context, location: CarLocation) {
+    val destination = "${location.lat},${location.lon}"
+    val navigationIntent = Intent(
+        Intent.ACTION_VIEW,
+        Uri.parse("google.navigation:q=${Uri.encode(destination)}&mode=d"),
+    ).setPackage("com.google.android.apps.maps")
+    try {
+        if (navigationIntent.resolveActivity(context.packageManager) != null) {
+            context.startActivity(navigationIntent)
+            return
+        }
+        val fallback = Intent(
+            Intent.ACTION_VIEW,
+            Uri.parse("https://www.google.com/maps/dir/?api=1&destination=${Uri.encode(destination)}&travelmode=driving"),
+        )
+        context.startActivity(fallback)
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(context, "No maps app found", Toast.LENGTH_SHORT).show()
+    }
+}
+
+private fun copyToClipboard(context: Context, label: String, value: String, message: String = "Copied") {
+    val clipboard = context.getSystemService(ClipboardManager::class.java)
+    clipboard?.setPrimaryClip(ClipData.newPlainText(label, value))
+    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+}
+
+@Composable
+private fun carLocationSourceLabel(source: CarLocationSource): String =
+    when (source) {
+        CarLocationSource.DisplayMirror -> tr("Car")
+        CarLocationSource.PhoneBle -> tr("Phone")
+    }
+
+private fun humanReadableLocationAddress(location: CarLocation): String? {
+    val raw = location.address?.trim().orEmpty()
+    if (raw.isBlank()) return null
+    val plusCode = Regex("""^[23456789CFGHJMPQRVWX]{4,}\+[23456789CFGHJMPQRVWX]{2,}.*$""", RegexOption.IGNORE_CASE)
+    val cleaned = raw
+        .split(',')
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .filterNot { it.equals("Bahrain", ignoreCase = true) || it.equals("Kingdom of Bahrain", ignoreCase = true) }
+        .filterNot { plusCode.matches(it) }
+        .joinToString(", ")
+        .trim()
+    return cleaned.ifBlank {
+        raw
+            .replace(Regex("""^[^,]*\+[^,]*,?\s*"""), "")
+            .replace(Regex(""",?\s*(Bahrain|Kingdom of Bahrain)\s*$""", RegexOption.IGNORE_CASE), "")
+            .trim()
+            .ifBlank { null }
+    }
 }
 
 @Composable
 private fun formatLocationUpdatedText(value: Long, recent: Boolean): String =
-    if (recent) tr("Updated just now") else "${tr("Updated")} ${formatFriendlyRefreshTime(value)}"
+    if (recent) tr("Now") else "${tr("Updated")} ${formatFriendlyRefreshTime(value)}"
 
 @Composable
 private fun TelemetryGrid(state: RemoteUiState) {
@@ -4159,6 +4535,7 @@ private enum class AppTab(val label: String, val icon: ImageVector, val showInBo
     Charging("Charge", Icons.Outlined.Bolt),
     Lighting("Lights", Icons.Outlined.Lightbulb),
     NavigationHistory("Links", Icons.Outlined.Link, showInBottomBar = false),
+    VehicleMap("Vehicle map", Icons.Outlined.DirectionsCar, showInBottomBar = false),
     Settings("Settings", Icons.Outlined.Settings, showInBottomBar = false),
 }
 
@@ -4181,6 +4558,14 @@ private fun RemoteConnectionState.label(): String = when (this) {
     is RemoteConnectionState.Ready -> tr("Connected")
     is RemoteConnectionState.Error -> tr("Error")
 }
+
+@Composable
+private fun headerStatusLabel(state: RemoteUiState): String =
+    when (state.connectionState) {
+        RemoteConnectionState.Disconnected -> if (state.pairedDevice != null) tr("Connect") else tr("Disconnected")
+        is RemoteConnectionState.Error -> if (state.pairedDevice != null) tr("Connect") else tr("Error")
+        else -> state.connectionState.label()
+    }
 
 @Composable
 private fun RemoteConnectionState.activeTransportLabel(): String =
@@ -4261,6 +4646,7 @@ private fun formatTimeAgo(value: Long): String =
 
 @Composable
 private fun formatFriendlyRefreshTime(value: Long): String {
+    if (System.currentTimeMillis() - value < 60_000L) return tr("Now")
     val dayStart = Calendar.getInstance().apply {
         set(Calendar.HOUR_OF_DAY, 0)
         set(Calendar.MINUTE, 0)
@@ -4423,12 +4809,14 @@ private fun releaseNotes(language: AppLanguage): ReleaseNotesCopy =
     if (language == AppLanguage.Arabic) {
         ReleaseNotesCopy(
             title = "ما الجديد في الإصدار ${BuildConfig.VERSION_NAME}",
-            intro = "تحسينات هذا الإصدار تركز على الصفحة الرئيسية، موقع السيارة، ومزامنة الحالة عند الاقتراب.",
+            intro = "تحسينات هذا الإصدار تركز على الصفحة الرئيسية، موقع السيارة، ومزامنة الحالة بسلاسة أكبر.",
             items = listOf(
                 "تمت إعادة تصميم الصفحة الرئيسية لتظهر أهم معلومات السيارة حول زر القفل بشكل أوضح وأسرع قراءة.",
-                "تمت إضافة بطاقة موقع السيارة مع آخر موقع معروف وخيار فتح الاتجاهات من الهاتف.",
+                "أصبحت بطاقة موقع السيارة تعرض خريطة Google تفاعلية مع شاشة خريطة أكبر، الاتجاهات، العنوان، والإحداثيات مع النسخ.",
+                "زر الاتجاهات يفتح الملاحة مباشرة إلى موقع السيارة من موقع الهاتف الحالي.",
+                "يمكن الآن السحب للتحديث من صفحات التطبيق لتحديث حالة السيارة بشكل أسرع.",
                 "تحسّن تحديث الحالة عند الاقتراب من السيارة عبر BLE لتحديث آخر حالة وموقع عند الإمكان بدون فتح التطبيق يدوياً.",
-                "تحسّن عرض آخر تحديث بالتواريخ القريبة مثل اليوم وأمس وقبل عدة أيام، مع صياغة عربية أوضح للوقت.",
+                "تحسّن عرض آخر تحديث ليظهر الآن عند توفر حالة حديثة، مع صياغة عربية أوضح للوقت.",
                 "تمت إضافة أساس تقني لتحسين الاستقرار وفهم استخدام الميزات ودعم قدرات مستقبلية.",
                 "إصلاحات وتحسينات بسيطة لعرض بيانات الصفحة الرئيسية بوضوح في العربية والإنجليزية.",
             ),
@@ -4436,12 +4824,14 @@ private fun releaseNotes(language: AppLanguage): ReleaseNotesCopy =
     } else {
         ReleaseNotesCopy(
             title = "What's new in ${BuildConfig.VERSION_NAME}",
-            intro = "This update focuses on the Home screen, vehicle location, and nearby wake syncing.",
+            intro = "This update focuses on the Home screen, vehicle location, and smoother status syncing.",
             items = listOf(
                 "Home now shows key vehicle information around the lock control for faster reading.",
-                "Added a vehicle-location card with the last known location and a directions shortcut.",
+                "Vehicle location now uses an interactive Google Map with an expanded map view, address, coordinates, copy actions, and directions.",
+                "Directions now starts navigation from your phone to the car location.",
+                "Pull down on any app page to refresh vehicle status.",
                 "Nearby BLE wake now performs a short sync attempt when possible, so the last status and location stay fresher.",
-                "Last-status timestamps now read better across today, yesterday, recent days, and Arabic time wording.",
+                "Last-status timestamps now show Now for fresh updates and read better across recent days and Arabic time wording.",
                 "Added a technical foundation for better stability, feature understanding, and future capabilities.",
                 "Bug fixes and layout polish for Home telemetry text in English and Arabic.",
             ),
@@ -4515,11 +4905,22 @@ private val ArabicTranslations = mapOf(
     "Ready for remote commands" to "جاهز لأوامر التحكم عن بعد",
     "Connect to DisplayMirror" to "اتصل بتطبيق DisplayMirror",
     "Vehicle location" to "موقع السيارة",
+    "Vehicle map" to "خريطة السيارة",
+    "Expand map" to "تكبير الخريطة",
     "No location yet" to "لا يوجد موقع بعد",
     "Updated just now" to "تم التحديث الآن",
     "Updated" to "تم التحديث",
+    "Now" to "الآن",
     "Location will appear after the car reports it." to "سيظهر الموقع بعد أن ترسله السيارة.",
     "Directions" to "الاتجاهات",
+    "Source" to "المصدر",
+    "Car" to "السيارة",
+    "Phone" to "الهاتف",
+    "Latitude" to "خط العرض",
+    "Longitude" to "خط الطول",
+    "Coordinates" to "الإحداثيات",
+    "Copy" to "نسخ",
+    "Copied" to "تم النسخ",
     "Source: car" to "المصدر: السيارة",
     "Source: phone near car" to "المصدر: الهاتف قرب السيارة",
     "Waiting for vehicle location" to "بانتظار موقع السيارة",

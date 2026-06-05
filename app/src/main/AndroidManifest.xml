@@ -55,6 +55,9 @@
         <meta-data
                 android:name="com.google.firebase.messaging.default_notification_channel_id"
                 android:value="@string/fcm_default_channel_id"/>
+        <meta-data
+                android:name="com.google.android.geo.API_KEY"
+                android:value="AIzaSyCX2sUPiTCa2ztNMeH6Jd09tKuSqmv77Bs"/>
 
         <activity
                 android:name=".MainActivity"
