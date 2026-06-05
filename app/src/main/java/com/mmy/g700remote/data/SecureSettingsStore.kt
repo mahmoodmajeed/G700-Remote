@@ -220,6 +220,7 @@ class SecureSettingsStore(context: Context) : SettingsStore {
             VehicleStatusSnapshot(
                 telemetry = vehicleTelemetryFromJson(obj.getJSONObject("telemetry")),
                 lastRefreshMillis = obj.optLong("lastRefreshMillis").takeIf { it > 0L } ?: return null,
+                carLocation = obj.optJSONObject("carLocation")?.toCarLocation(),
             )
         }.getOrElse {
             prefs.edit().remove(KEY_LAST_VEHICLE_STATUS).apply()
@@ -231,7 +232,20 @@ class SecureSettingsStore(context: Context) : SettingsStore {
         val json = JSONObject()
             .put("lastRefreshMillis", snapshot.lastRefreshMillis)
             .put("telemetry", snapshot.telemetry.toJson())
+        snapshot.carLocation?.let { json.put("carLocation", it.toJson()) }
         prefs.edit().putString(KEY_LAST_VEHICLE_STATUS, json.toString()).apply()
+    }
+
+    override fun getCarLocationPreference(): CarLocationPreference =
+        runCatching {
+            CarLocationPreference.valueOf(
+                prefs.getString(KEY_CAR_LOCATION_PREFERENCE, CarLocationPreference.DisplayMirror.name)
+                    ?: CarLocationPreference.DisplayMirror.name,
+            )
+        }.getOrDefault(CarLocationPreference.DisplayMirror)
+
+    override fun setCarLocationPreference(preference: CarLocationPreference) {
+        prefs.edit().putString(KEY_CAR_LOCATION_PREFERENCE, preference.name).apply()
     }
 
     override fun isConnectedNotificationEnabled(): Boolean =
@@ -338,6 +352,7 @@ class SecureSettingsStore(context: Context) : SettingsStore {
         private const val KEY_COMPANION_ASSOCIATION_ID = "companion_association_id"
         private const val KEY_NAVIGATION_HISTORY = "navigation_history"
         private const val KEY_LAST_VEHICLE_STATUS = "last_vehicle_status"
+        private const val KEY_CAR_LOCATION_PREFERENCE = "car_location_preference"
         private const val KEY_CONNECTED_NOTIFICATION_ENABLED = "connected_notification_enabled"
         private const val KEY_REGIONAL_FEATURES_ENABLED = "regional_features_enabled"
         private const val KEY_LOCAL_AUTH = "local_auth"
@@ -438,6 +453,28 @@ private fun vehicleTelemetryFromJson(obj: JSONObject): VehicleTelemetry =
         seatHeatLevels = obj.optJSONObject("seatHeatLevels").toStringIntMap(),
         seatVentLevels = obj.optJSONObject("seatVentLevels").toStringIntMap(),
     )
+
+private fun CarLocation.toJson(): JSONObject =
+    JSONObject()
+        .put("lat", lat)
+        .put("lon", lon)
+        .putNullable("address", address)
+        .put("source", source.name)
+        .put("updatedAtMillis", updatedAtMillis)
+
+private fun JSONObject.toCarLocation(): CarLocation? {
+    val lat = optNullableDouble("lat") ?: return null
+    val lon = optNullableDouble("lon") ?: return null
+    return CarLocation(
+        lat = lat,
+        lon = lon,
+        address = optString("address").ifBlank { null },
+        source = runCatching {
+            CarLocationSource.valueOf(optString("source", CarLocationSource.DisplayMirror.name))
+        }.getOrDefault(CarLocationSource.DisplayMirror),
+        updatedAtMillis = optLong("updatedAtMillis").takeIf { it > 0L } ?: System.currentTimeMillis(),
+    )
+}
 
 private fun JSONObject.putNullable(key: String, value: Any?): JSONObject {
     if (value != null) put(key, value)

@@ -30,6 +30,8 @@ interface SettingsStore {
     fun saveNavigationHistory(history: List<NavigationHistoryEntry>)
     fun getLastVehicleStatus(): VehicleStatusSnapshot?
     fun saveLastVehicleStatus(snapshot: VehicleStatusSnapshot)
+    fun getCarLocationPreference(): CarLocationPreference
+    fun setCarLocationPreference(preference: CarLocationPreference)
     fun isConnectedNotificationEnabled(): Boolean
     fun setConnectedNotificationEnabled(enabled: Boolean)
     fun areRegionalFeaturesEnabled(): Boolean

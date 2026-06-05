@@ -99,9 +99,14 @@ class MainActivity : ComponentActivity() {
                 Manifest.permission.BLUETOOTH_SCAN,
                 Manifest.permission.BLUETOOTH_CONNECT,
                 Manifest.permission.NEARBY_WIFI_DEVICES,
+                Manifest.permission.ACCESS_FINE_LOCATION,
             )
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+            arrayOf(
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+            )
         } else {
             arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
         }

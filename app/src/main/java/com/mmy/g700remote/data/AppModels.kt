@@ -57,12 +57,26 @@ data class VehicleTelemetry(
 data class VehicleStatusSnapshot(
     val telemetry: VehicleTelemetry,
     val lastRefreshMillis: Long,
+    val carLocation: CarLocation? = null,
 )
 
 data class CarLocation(
     val lat: Double,
     val lon: Double,
+    val address: String? = null,
+    val source: CarLocationSource = CarLocationSource.DisplayMirror,
+    val updatedAtMillis: Long = System.currentTimeMillis(),
 )
+
+enum class CarLocationSource {
+    DisplayMirror,
+    PhoneBle,
+}
+
+enum class CarLocationPreference {
+    DisplayMirror,
+    PhoneWhenBle,
+}
 
 data class AppUpdateInfo(
     val versionName: String,
@@ -177,6 +191,7 @@ data class RemoteUiState(
     val loggingEnabled: Boolean = false,
     val protocolLog: List<ProtocolLogEntry> = emptyList(),
     val carLocation: CarLocation? = null,
+    val carLocationPreference: CarLocationPreference = CarLocationPreference.DisplayMirror,
     val navigationHistory: List<NavigationHistoryEntry> = emptyList(),
     val demoMode: Boolean = false,
     val connectedNotificationEnabled: Boolean = true,

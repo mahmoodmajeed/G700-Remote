@@ -2,19 +2,20 @@
 
 G700 Remote is a Kotlin Android companion app for Jetour G700 head units running the open-source DisplayMirror app. It connects to DisplayMirror's remote-access protocol over Bluetooth LE or LAN/mDNS and provides a focused phone remote for lock/unlock, climate, openings, lighting, charging, and vehicle telemetry that DisplayMirror exposes.
 
-This repository started from the v1.2 baseline and now tracks the v1.4.12 release. It is intended as the clean source baseline for future development, CI, Play Store preparation, and Codex-assisted changes.
+This repository started from the v1.2 baseline and now tracks the v1.5.0 release. It is intended as the clean source baseline for future development, CI, Play Store preparation, and Codex-assisted changes.
 
 ## Status
 
-- App version: `1.4.12`
+- App version: `1.5.0`
 - Android package: `com.mmy.g700remote`
-- `versionCode`: `17`
+- `versionCode`: `18`
 - Minimum Android: API 30
 - Target/compile SDK: API 36
 - UI: Jetpack Compose Material 3 with an expressive spring-motion surface system
 - Protocol: DisplayMirror remote protocol v4
 - Transports: BLE and LAN/mDNS
 - Languages: English and Arabic
+- Firebase: Analytics, Crashlytics, Performance Monitoring, App Check with Play Integrity, and Cloud Messaging are wired through the app module configuration.
 
 This is not an OEM-certified digital key. It is a compatibility client for the DisplayMirror head-unit protocol and should only be used with vehicles and head units you own or are authorized to control.
 
@@ -46,6 +47,7 @@ For implementation details, see [docs/DISPLAYMIRROR_COMPATIBILITY.md](docs/DISPL
 
 - First-time setup with pairing-code entry, a link to DisplayMirror, and a demo mode for review/testing without a paired car.
 - Material 3 Expressive-inspired UI with responsive spring press motion, larger tactile surfaces, and a Jetour-branded header.
+- v1.5.0 redesigns Home around the lock control, adds a last-known vehicle-location card with directions, improves BLE nearby wake syncing, enhances last-status date wording, and adds a technical foundation for stability and future app capabilities.
 - v1.4.12 refines the connected header status, moves pairing reset to the end of Settings with history choices, defaults BLE proximity wake on for new installs, and makes the connected notification harder to dismiss accidentally.
 - v1.4.11 keeps the v1.4.9 feature set and adds minor launcher icon scale and header transport-line polish.
 - v1.4.10 keeps the v1.4.9 feature set and adds minor launcher icon safe-zone and header spacing polish.
@@ -69,8 +71,10 @@ For implementation details, see [docs/DISPLAYMIRROR_COMPATIBILITY.md](docs/DISPL
 - Share-to-car navigation: share Google Maps, `geo:` links, Google navigation links, coordinates, or place text to G700 Remote and the app resolves coordinates or forwards a clean destination to DisplayMirror.
 - Shared-link history with readable place names when available, original-link open back into Maps/browser, resend, delete confirmation, and clear-all confirmation.
 - Last-known status is saved on the phone after refreshes, so offline screens can still show the latest returned vehicle data while controls remain disabled until connected.
+- Last-known vehicle location is saved when DisplayMirror returns it. The Home location card uses Android geocoding when available and opens the phone's Maps app for directions; no embedded Google Maps API key is required.
+- Optional location source setting can use DisplayMirror-reported location by default or the phone's last known location while connected over BLE when location permission is granted.
 - Optional connected notification, enabled by default, keeps a low-priority ongoing status while connected and provides quick lock/unlock and hazards actions.
-- Optional BLE proximity wake, on by default for new installs, registers an Android-managed BLE PendingIntent scan so the app can wake when the paired DisplayMirror BLE device is nearby without keeping a permanent background scanning service.
+- Optional BLE proximity wake, on by default for new installs, registers an Android-managed BLE PendingIntent scan so the app can wake when the paired DisplayMirror BLE device is nearby without keeping a permanent background scanning service. v1.5.0 also performs a bounded sync attempt from the wake worker so status/location can refresh when Android permits background work.
 - In-app "What's new" dialog appears after updates and can be reopened from Settings in English or Arabic.
 - Settings for merged connectivity/pairing, language, theme, security gate, regional features, and diagnostics.
 - Settings app update checker using GitHub Releases, with manual check, twice-daily background checks, and a 7-day freshness gate so outdated builds stop controlling the car until the update check succeeds.
@@ -88,6 +92,24 @@ For implementation details, see [docs/DISPLAYMIRROR_COMPATIBILITY.md](docs/DISPL
 - Android does not allow silent APK installation for normal apps. The updater downloads the signed APK and opens the Android package installer after the user grants install-from-this-source permission.
 - BLE proximity wake depends on DisplayMirror advertising, Android background policy, and OEM battery behavior. It will not run after the user force-stops the app, and Android 12+ may require Companion Device association before the connected foreground notification can start automatically from the background.
 - Values are displayed only when returned by DisplayMirror. Missing fields remain unknown instead of being faked.
+- The Home map preview is a lightweight native preview. It opens external Maps for full navigation/zoom instead of embedding Google Maps.
+- Phone-derived location requires Android location permission and uses only the last known phone location while connected over BLE.
+
+## Firebase
+
+Firebase is configured with `app/google-services.json` for package `com.mmy.g700remote`.
+
+Enabled SDK paths:
+
+- Analytics events for screen views, command taps, key settings changes, sessions, connection states, navigation-share outcomes, and map-open actions. Sensitive values such as pairing code, BLE MAC address, raw shared links, and exact coordinates are not logged as analytics parameters.
+- Crashlytics custom keys for connection state, transport, language, theme, demo mode, and paired state, plus non-fatal reporting for background wake and notification failures.
+- Performance Monitoring through the Firebase Performance SDK/plugin.
+- App Check using the Play Integrity provider.
+- Cloud Messaging through `G700FirebaseMessagingService` with app-branded notifications.
+
+Release signing SHA-256 for Firebase Android app / App Check setup:
+
+`36:AE:81:B9:60:D1:46:E6:A4:44:5E:3E:04:15:BF:F9:5B:0F:6A:18:EC:04:44:78:59:C8:1B:81:C3:DA:72:4F`
 - Lock-state semantics may need real vehicle calibration if DisplayMirror or the head unit changes the returned mapping.
 
 ## Project Layout

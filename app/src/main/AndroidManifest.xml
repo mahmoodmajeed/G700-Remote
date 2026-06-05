@@ -13,8 +13,7 @@
             android:name="android.permission.BLUETOOTH_ADMIN"
             android:maxSdkVersion="30"/>
     <uses-permission
-            android:name="android.permission.ACCESS_FINE_LOCATION"
-            android:maxSdkVersion="30"/>
+            android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission
             android:name="android.permission.BLUETOOTH_SCAN"
             android:usesPermissionFlags="neverForLocation"
@@ -37,6 +36,7 @@
             tools:targetApi="tiramisu"/>
 
     <application
+            android:name=".G700RemoteApplication"
             android:allowBackup="true"
             android:fullBackupContent="@xml/backup_rules"
             android:dataExtractionRules="@xml/data_extraction_rules"
@@ -46,6 +46,16 @@
             android:supportsRtl="true"
             android:theme="@style/Theme.G700Remote"
             tools:targetApi="s">
+        <meta-data
+                android:name="com.google.firebase.messaging.default_notification_icon"
+                android:resource="@drawable/ic_jetour_logomark"/>
+        <meta-data
+                android:name="com.google.firebase.messaging.default_notification_color"
+                android:resource="@color/notification_accent"/>
+        <meta-data
+                android:name="com.google.firebase.messaging.default_notification_channel_id"
+                android:value="@string/fcm_default_channel_id"/>
+
         <activity
                 android:name=".MainActivity"
                 android:exported="true"
@@ -132,6 +142,14 @@
                 android:name=".ConnectedCarNotificationService"
                 android:exported="false"
                 android:foregroundServiceType="connectedDevice"/>
+
+        <service
+                android:name=".messaging.G700FirebaseMessagingService"
+                android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT"/>
+            </intent-filter>
+        </service>
 
         <service
                 android:name=".blewake.G700CompanionDeviceService"

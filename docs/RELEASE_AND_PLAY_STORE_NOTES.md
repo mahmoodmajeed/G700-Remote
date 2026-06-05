@@ -1,6 +1,6 @@
 # Release And Play Store Notes
 
-These notes prepare the v1.4.12 baseline for future automated builds and Play Store work.
+These notes prepare the v1.5.0 baseline for future automated builds and Play Store work.
 
 ## Local Verification
 
@@ -16,8 +16,8 @@ Generated artifacts are under `app/build/outputs/` and should not be committed.
 
 Current baseline:
 
-- `versionName = "1.4.12"`
-- `versionCode = 17`
+- `versionName = "1.5.0"`
+- `versionCode = 18`
 
 For future releases, increase `versionCode` for every Play Store upload. Keep `versionName` user-readable and match release notes.
 
@@ -33,6 +33,18 @@ Never commit:
 - signing passwords
 - `signing.properties`
 - generated signed APKs/AABs
+
+Current release-signing certificate SHA-256 for Firebase Android app setup and Firebase App Check / Play Integrity registration:
+
+`36:AE:81:B9:60:D1:46:E6:A4:44:5E:3E:04:15:BF:F9:5B:0F:6A:18:EC:04:44:78:59:C8:1B:81:C3:DA:72:4F`
+
+## Firebase Release Setup
+
+- `app/google-services.json` is required for Firebase SDK initialization and is intentionally committed because Firebase Android config is not a signing secret.
+- Firebase Analytics, Crashlytics, Performance Monitoring, App Check with Play Integrity, and Cloud Messaging are configured in the app module.
+- In Firebase Console, add the SHA-256 fingerprint above to the Android app, then enable App Check with the Play Integrity provider.
+- In Google Play Console / Play Integrity, ensure package `com.mmy.g700remote` and the release certificate fingerprint match the distributed APK signing lineage.
+- Cloud Messaging notification messages can use the default channel `g700_remote_messages` and the app will show branded notifications.
 
 ## Release Size
 
@@ -72,7 +84,7 @@ For Play Store automation, prefer building Android App Bundles (`bundleRelease`)
 
 The app checks `mahmoodmajeed/G700-Remote` GitHub Releases for the latest APK asset. For every public release that should be offered in-app:
 
-- create a GitHub release with a semantic tag such as `v1.4.12`
+- create a GitHub release with a semantic tag such as `v1.5.0`
 - attach one signed `.apk` asset
 - keep the APK `versionName` higher than installed builds
 - keep the APK signed with the same signing lineage so Android can install it as an update

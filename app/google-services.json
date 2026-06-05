@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "498522999233",
+    "project_id": "g700-remote",
+    "storage_bucket": "g700-remote.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:498522999233:android:53f497cdf40e5d29d70740",
+        "android_client_info": {
+          "package_name": "com.mmy.g700remote"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAUBlrNcGTrcJv5fQOagskv1_QacXmV8is"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

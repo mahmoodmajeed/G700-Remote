@@ -116,6 +116,7 @@ class RemoteRepositoryTest {
         private var snapshot = initialSnapshot
         private var regionalFeatures = false
         private var notificationEnabled = true
+        private var locationPreference = CarLocationPreference.DisplayMirror
         private var releaseNotesVersion: String? = null
 
         override fun getPairedDevice(): PairedDevice? = paired
@@ -191,6 +192,12 @@ class RemoteRepositoryTest {
 
         override fun saveLastVehicleStatus(snapshot: VehicleStatusSnapshot) {
             this.snapshot = snapshot
+        }
+
+        override fun getCarLocationPreference(): CarLocationPreference = locationPreference
+
+        override fun setCarLocationPreference(preference: CarLocationPreference) {
+            locationPreference = preference
         }
 
         override fun isConnectedNotificationEnabled(): Boolean = notificationEnabled

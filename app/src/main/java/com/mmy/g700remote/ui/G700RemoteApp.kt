@@ -11,6 +11,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -109,6 +110,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -134,6 +138,7 @@ import com.mmy.g700remote.BuildConfig
 import com.mmy.g700remote.ConnectedCarNotificationService
 import com.mmy.g700remote.ble.ConnectionPreference
 import com.mmy.g700remote.G700RemoteViewModel
+import com.mmy.g700remote.analytics.G700Analytics
 import com.mmy.g700remote.ble.RemoteConnectionState
 import com.mmy.g700remote.ble.TransportKind
 import com.mmy.g700remote.data.AppColorMode
@@ -142,6 +147,9 @@ import com.mmy.g700remote.data.AppLanguage
 import com.mmy.g700remote.data.AppTheme
 import com.mmy.g700remote.data.AppUpdateInfo
 import com.mmy.g700remote.data.AppUpdateState
+import com.mmy.g700remote.data.CarLocation
+import com.mmy.g700remote.data.CarLocationPreference
+import com.mmy.g700remote.data.CarLocationSource
 import com.mmy.g700remote.data.LockStateMapping
 import com.mmy.g700remote.data.LockCommandProgress
 import com.mmy.g700remote.data.NavigationHistoryEntry
@@ -211,6 +219,7 @@ fun G700RemoteApp(
     }
 
     fun submit(command: RemoteCommand) {
+        G700Analytics.command(command.displayName(), requestedTab?.label ?: "active", state.copy(demoMode = demoMode))
         if (demoMode) {
             demoTelemetry = applyDemoCommand(demoTelemetry, command)
             scope.launch { snackbarHostState.showSnackbar(translate(language, "Demo mode only. No command was sent to the car.")) }
@@ -236,6 +245,15 @@ fun G700RemoteApp(
     fun sendNavigationText(text: String) {
         navigationShareInProgress = true
         viewModel.sendSharedNavigation(text) { result ->
+            G700Analytics.navigationShare(
+                sent = result.sent,
+                saved = result.saved,
+                source = if (text.contains("maps", ignoreCase = true) || text.contains("geo:", ignoreCase = true)) {
+                    "maps"
+                } else {
+                    "text"
+                },
+            )
             scope.launch {
                 navigationShareInProgress = false
                 navigationShareResult = result
@@ -245,6 +263,7 @@ fun G700RemoteApp(
 
     fun resendNavigationHistory(entry: NavigationHistoryEntry) {
         viewModel.resendNavigationHistory(entry.id) { result ->
+            G700Analytics.navigationShare(sent = result.sent, saved = result.saved, source = "history")
             scope.launch {
                 snackbarHostState.showSnackbar(
                     translate(
@@ -258,6 +277,51 @@ fun G700RemoteApp(
                 )
             }
         }
+    }
+
+    fun setBleEnabled(enabled: Boolean) {
+        G700Analytics.settingChanged("ble_enabled", enabled.toString())
+        viewModel.setBleEnabled(enabled)
+    }
+
+    fun setLanEnabled(enabled: Boolean) {
+        G700Analytics.settingChanged("lan_enabled", enabled.toString())
+        viewModel.setLanEnabled(enabled)
+    }
+
+    fun setConnectionPreference(preference: ConnectionPreference) {
+        G700Analytics.settingChanged("connection_preference", preference.name)
+        viewModel.setConnectionPreference(preference)
+    }
+
+    fun setAppLanguage(language: AppLanguage) {
+        G700Analytics.settingChanged("language", language.name)
+        viewModel.setAppLanguage(language)
+    }
+
+    fun setAppTheme(theme: AppTheme) {
+        G700Analytics.settingChanged("theme", theme.name)
+        viewModel.setAppTheme(theme)
+    }
+
+    fun setAppColorMode(mode: AppColorMode) {
+        G700Analytics.settingChanged("color_mode", mode.name)
+        viewModel.setAppColorMode(mode)
+    }
+
+    fun setAppIconTheme(theme: AppIconTheme) {
+        G700Analytics.settingChanged("icon_theme", theme.name)
+        viewModel.setAppIconTheme(theme)
+    }
+
+    fun setConnectedNotificationEnabled(enabled: Boolean) {
+        G700Analytics.settingChanged("connected_notification", enabled.toString())
+        viewModel.setConnectedNotificationEnabled(enabled)
+    }
+
+    fun setBleWakeEnabled(enabled: Boolean) {
+        G700Analytics.settingChanged("wake_nearby", enabled.toString())
+        viewModel.setBleWakeEnabled(enabled)
     }
 
     val displayedState = if (demoMode) {
@@ -322,6 +386,7 @@ fun G700RemoteApp(
             }
 
     LaunchedEffect(state.connectionState) {
+        G700Analytics.connectionState(state)
         when (state.connectionState) {
             is RemoteConnectionState.Ready -> wasRecentlyConnected = true
             RemoteConnectionState.Disconnected,
@@ -380,8 +445,14 @@ fun G700RemoteApp(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_START -> viewModel.onForeground()
-                Lifecycle.Event.ON_STOP -> viewModel.onBackground()
+                Lifecycle.Event.ON_START -> {
+                    G700Analytics.appForeground(state)
+                    viewModel.onForeground()
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    G700Analytics.appBackground(state)
+                    viewModel.onBackground()
+                }
                 else -> Unit
             }
         }
@@ -423,19 +494,20 @@ fun G700RemoteApp(
                 onClearPairing = viewModel::clearPairing,
                 onPairingCodeChanged = viewModel::setPairingCode,
                 onClearNavigationHistory = viewModel::clearNavigationHistory,
-                onBleEnabledChanged = viewModel::setBleEnabled,
-                onLanEnabledChanged = viewModel::setLanEnabled,
-                onConnectionPreferenceChanged = viewModel::setConnectionPreference,
-                onAppLanguageChanged = viewModel::setAppLanguage,
-                onAppThemeChanged = viewModel::setAppTheme,
-                onAppColorModeChanged = viewModel::setAppColorMode,
-                onAppIconThemeChanged = viewModel::setAppIconTheme,
+                onBleEnabledChanged = ::setBleEnabled,
+                onLanEnabledChanged = ::setLanEnabled,
+                onConnectionPreferenceChanged = ::setConnectionPreference,
+                onAppLanguageChanged = ::setAppLanguage,
+                onAppThemeChanged = ::setAppTheme,
+                onAppColorModeChanged = ::setAppColorMode,
+                onAppIconThemeChanged = ::setAppIconTheme,
                 onRegionalFeaturesChanged = viewModel::setRegionalFeaturesEnabled,
                 onLocalAuthChanged = viewModel::setLocalAuthEnabled,
                 onLockMappingChanged = viewModel::setLockStateMapping,
                 onLoggingChanged = viewModel::setLoggingEnabled,
-                onConnectedNotificationChanged = viewModel::setConnectedNotificationEnabled,
-                onBleWakeEnabledChanged = viewModel::setBleWakeEnabled,
+                onConnectedNotificationChanged = ::setConnectedNotificationEnabled,
+                onBleWakeEnabledChanged = ::setBleWakeEnabled,
+                onCarLocationPreferenceChanged = viewModel::setCarLocationPreference,
                 updateState = updateState,
                 onCheckForUpdates = viewModel::checkForUpdates,
                 onDownloadUpdate = { viewModel.downloadAndInstallUpdate(activity, it) },
@@ -482,19 +554,23 @@ fun G700RemoteApp(
                 onClearPairing = viewModel::clearPairing,
                 onPairingCodeChanged = viewModel::setPairingCode,
                 onClearNavigationHistory = viewModel::clearNavigationHistory,
-                onBleEnabledChanged = viewModel::setBleEnabled,
-                onLanEnabledChanged = viewModel::setLanEnabled,
-                onConnectionPreferenceChanged = viewModel::setConnectionPreference,
-                onAppLanguageChanged = viewModel::setAppLanguage,
-                onAppThemeChanged = viewModel::setAppTheme,
-                onAppColorModeChanged = viewModel::setAppColorMode,
-                onAppIconThemeChanged = viewModel::setAppIconTheme,
+                onBleEnabledChanged = ::setBleEnabled,
+                onLanEnabledChanged = ::setLanEnabled,
+                onConnectionPreferenceChanged = ::setConnectionPreference,
+                onAppLanguageChanged = ::setAppLanguage,
+                onAppThemeChanged = ::setAppTheme,
+                onAppColorModeChanged = ::setAppColorMode,
+                onAppIconThemeChanged = ::setAppIconTheme,
                 onRegionalFeaturesChanged = viewModel::setRegionalFeaturesEnabled,
                 onLocalAuthChanged = viewModel::setLocalAuthEnabled,
                 onLockMappingChanged = viewModel::setLockStateMapping,
                 onLoggingChanged = viewModel::setLoggingEnabled,
-                onConnectedNotificationChanged = viewModel::setConnectedNotificationEnabled,
-                onBleWakeEnabledChanged = viewModel::setBleWakeEnabled,
+                onConnectedNotificationChanged = ::setConnectedNotificationEnabled,
+                onBleWakeEnabledChanged = ::setBleWakeEnabled,
+                onCarLocationPreferenceChanged = { preference ->
+                    G700Analytics.settingChanged("car_location_source", preference.name)
+                    viewModel.setCarLocationPreference(preference)
+                },
                 updateState = updateState,
                 onCheckForUpdates = viewModel::checkForUpdates,
                 onDownloadUpdate = { viewModel.downloadAndInstallUpdate(activity, it) },
@@ -986,6 +1062,7 @@ private fun MainRemoteScaffold(
     onLoggingChanged: (Boolean) -> Unit,
     onConnectedNotificationChanged: (Boolean) -> Unit,
     onBleWakeEnabledChanged: (Boolean) -> Unit,
+    onCarLocationPreferenceChanged: (CarLocationPreference) -> Unit,
     updateState: AppUpdateState,
     onCheckForUpdates: () -> Unit,
     onDownloadUpdate: (AppUpdateInfo) -> Unit,
@@ -1017,6 +1094,9 @@ private fun MainRemoteScaffold(
             tab = it
             onRequestedTabConsumed()
         }
+    }
+    LaunchedEffect(tab) {
+        G700Analytics.screen(tab.label)
     }
     Scaffold(
         modifier = Modifier.padding(contentPadding),
@@ -1074,6 +1154,7 @@ private fun MainRemoteScaffold(
                 onLoggingChanged = onLoggingChanged,
                 onConnectedNotificationChanged = onConnectedNotificationChanged,
                 onBleWakeEnabledChanged = onBleWakeEnabledChanged,
+                onCarLocationPreferenceChanged = onCarLocationPreferenceChanged,
                 updateState = updateState,
                 onCheckForUpdates = onCheckForUpdates,
                 onDownloadUpdate = onDownloadUpdate,
@@ -1207,16 +1288,14 @@ private fun HeaderStatusAction(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        if (!isConnected) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    lastRefreshStatusLine(state),
-                    style = MaterialTheme.typography.labelSmall.copy(lineHeight = 14.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                lastRefreshStatusLine(state),
+                style = MaterialTheme.typography.labelSmall.copy(lineHeight = 14.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -1495,46 +1574,16 @@ private fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(32.dp),
-                color = MaterialTheme.colorScheme.surfaceContainer,
-                tonalElevation = 4.dp,
-                shadowElevation = 3.dp,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)),
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(vertical = 18.dp, horizontal = 16.dp),
-                ) {
-                    Text(
-                        lockLabel(state),
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                    )
-                    if (!ready) {
-                        Text(
-                            tr("Connect to DisplayMirror"),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                    Spacer(Modifier.height(14.dp))
-                    HeroCommandButton(
-                        text = if (lockActionIsUnlock) tr("Unlock") else tr("Lock"),
-                        icon = if (lockActionIsUnlock) Icons.Outlined.LockOpen else Icons.Outlined.Lock,
-                        enabled = ready && !lockPending,
-                        loading = lockPending,
-                        danger = lockActionIsUnlock,
-                        onClick = { onCommand(if (lockActionIsUnlock) RemoteCommand.Unlock else RemoteCommand.Lock) },
-                    )
-                }
-            }
+            HomeControlDashboard(
+                state = state,
+                ready = ready,
+                lockActionIsUnlock = lockActionIsUnlock,
+                lockPending = lockPending,
+                onCommand = onCommand,
+            )
         }
         item {
-            TelemetryGrid(state)
+            VehicleLocationCard(state)
         }
         item {
             Section(tr("Quick Actions")) {
@@ -2117,6 +2166,7 @@ private fun SettingsScreen(
     onLoggingChanged: (Boolean) -> Unit,
     onConnectedNotificationChanged: (Boolean) -> Unit,
     onBleWakeEnabledChanged: (Boolean) -> Unit,
+    onCarLocationPreferenceChanged: (CarLocationPreference) -> Unit,
     updateState: AppUpdateState,
     onCheckForUpdates: () -> Unit,
     onDownloadUpdate: (AppUpdateInfo) -> Unit,
@@ -2221,9 +2271,27 @@ private fun SettingsScreen(
                     icon = Icons.Outlined.BluetoothSearching,
                     onCheckedChange = onBleWakeEnabledChanged,
                 )
+                Spacer(Modifier.height(8.dp))
+                Text(tr("Vehicle location source"), fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    SegmentedChoice(
+                        label = tr("From car"),
+                        selected = state.carLocationPreference == CarLocationPreference.DisplayMirror,
+                        enabled = true,
+                        modifier = Modifier.weight(1f),
+                        onClick = { onCarLocationPreferenceChanged(CarLocationPreference.DisplayMirror) },
+                    )
+                    SegmentedChoice(
+                        label = tr("Phone near car"),
+                        selected = state.carLocationPreference == CarLocationPreference.PhoneWhenBle,
+                        enabled = true,
+                        modifier = Modifier.weight(1f),
+                        onClick = { onCarLocationPreferenceChanged(CarLocationPreference.PhoneWhenBle) },
+                    )
+                }
                 Text(
-                    tr("When enabled, Android registers BLE wake automatically after pairing. No companion setup button is required."),
+                    tr("Default uses DisplayMirror location when available. Phone location is only used while connected over BLE and permission is granted."),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -2316,12 +2384,6 @@ private fun SettingsScreen(
                     }
                     Switch(checked = state.localAuthEnabled, onCheckedChange = onLocalAuthChanged)
                 }
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    tr("This app controls the DisplayMirror head-unit protocol. It is not an OEM-certified digital key."),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
         }
         item {
@@ -2357,11 +2419,7 @@ private fun SettingsScreen(
                             },
                         )
                     }
-                } ?: Text(
-                    tr("Checks GitHub releases for signed APK updates twice daily."),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                }
                 Spacer(Modifier.height(10.dp))
                 OutlinedButton(
                     onClick = onCheckForUpdates,
@@ -2887,6 +2945,313 @@ private fun ActionBoxGrid(
 }
 
 @Composable
+private fun HomeControlDashboard(
+    state: RemoteUiState,
+    ready: Boolean,
+    lockActionIsUnlock: Boolean,
+    lockPending: Boolean,
+    onCommand: (RemoteCommand) -> Unit,
+) {
+    val leftTiles = listOf(
+        TileData(tr("Battery"), state.telemetry.batterySoc?.let { "$it%" } ?: tr("Unknown"), Icons.Outlined.ElectricBolt),
+        TileData(tr("Fuel"), state.telemetry.fuelPercent?.let { "$it%" } ?: tr("Unknown"), Icons.Outlined.LocalGasStation),
+        TileData(tr("Air"), when (state.telemetry.fanSpeed?.let { it > 0 }) {
+            true -> tr("On")
+            false -> tr("Off")
+            null -> tr("Unknown")
+        }, Icons.Outlined.AcUnit),
+    )
+    val rightTiles = listOf(
+        TileData(tr("Cabin"), state.telemetry.cabinTemp?.let { formatTemp(it) } ?: tr("Unknown"), Icons.Outlined.Thermostat),
+        TileData(tr("Outside"), state.telemetry.outdoorTemp?.let { formatTemp(it) } ?: tr("Unknown"), Icons.Outlined.Air),
+        TileData(tr("Coolant"), state.telemetry.coolantTemp?.let { formatTemp(it) } ?: tr("Unknown"), Icons.Outlined.WaterDrop),
+    )
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            lockLabel(state),
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            if (ready) {
+                if (lockActionIsUnlock) tr("Tap to unlock") else tr("Tap to lock")
+            } else {
+                tr("Connect to Control")
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            HomeTelemetryColumn(leftTiles, Modifier.weight(0.88f))
+            HeroCommandButton(
+                text = if (lockActionIsUnlock) tr("Unlock") else tr("Lock"),
+                icon = if (lockActionIsUnlock) Icons.Outlined.LockOpen else Icons.Outlined.Lock,
+                enabled = ready && !lockPending,
+                loading = lockPending,
+                danger = lockActionIsUnlock,
+                modifier = Modifier.weight(1.25f),
+                onClick = { onCommand(if (lockActionIsUnlock) RemoteCommand.Unlock else RemoteCommand.Lock) },
+            )
+            HomeTelemetryColumn(rightTiles, Modifier.weight(0.88f))
+        }
+    }
+}
+
+@Composable
+private fun HomeTelemetryColumn(
+    tiles: List<TileData>,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
+        tiles.forEach { tile ->
+            HomeTelemetryTile(tile)
+        }
+    }
+}
+
+@Composable
+private fun HomeTelemetryTile(tile: TileData) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(86.dp),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        tonalElevation = 3.dp,
+        shadowElevation = 2.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 9.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Icon(tile.icon, contentDescription = null, modifier = Modifier.size(21.dp), tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(5.dp))
+            Text(
+                tile.label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                tile.value,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
+private fun VehicleLocationCard(state: RemoteUiState) {
+    val location = state.carLocation
+    val uriHandler = LocalUriHandler.current
+    val recent = location != null && System.currentTimeMillis() - location.updatedAtMillis < 120_000L
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                tr("Vehicle location"),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f),
+            )
+            Box(
+                modifier = Modifier
+                    .size(9.dp)
+                    .border(
+                        width = 1.5.dp,
+                        color = if (recent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        shape = CircleShape,
+                    )
+                    .background(
+                        color = if (recent) MaterialTheme.colorScheme.primary else Color.Transparent,
+                        shape = CircleShape,
+                    ),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                location?.let { formatLocationUpdatedText(it.updatedAtMillis, recent) } ?: tr("No location yet"),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Surface(
+            shape = RoundedCornerShape(26.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            tonalElevation = 4.dp,
+            shadowElevation = 3.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.32f)),
+        ) {
+            Column {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(158.dp),
+                ) {
+                    StylizedMapPreview(location)
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Icon(Icons.Outlined.DirectionsCar, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text(
+                        location?.address
+                            ?: location?.let { "%.5f, %.5f".format(Locale.US, it.lat, it.lon) }
+                            ?: tr("Location will appear after the car reports it."),
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = if (location?.address != null) FontWeight.SemiBold else FontWeight.Normal,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            location?.let {
+                                G700Analytics.mapOpened(it.source.name)
+                                openLocationInMaps(uriHandler, it)
+                            }
+                        },
+                        enabled = location != null,
+                        shape = RoundedCornerShape(18.dp),
+                    ) {
+                        Icon(Icons.Outlined.Send, contentDescription = null, modifier = Modifier.size(17.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(tr("Directions"))
+                    }
+                }
+                location?.let {
+                    Text(
+                        when (it.source) {
+                            CarLocationSource.DisplayMirror -> tr("Source: car")
+                            CarLocationSource.PhoneBle -> tr("Source: phone near car")
+                        },
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StylizedMapPreview(location: CarLocation?) {
+    val primary = MaterialTheme.colorScheme.primary
+    val road = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)
+    val roadStrong = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.24f)
+    val water = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.25f)
+    val surface = MaterialTheme.colorScheme.surfaceContainerHigh
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(surface),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            drawRect(color = surface)
+            repeat(6) { index ->
+                val y = size.height * (0.12f + index * 0.15f)
+                drawLine(
+                    color = road,
+                    start = androidx.compose.ui.geometry.Offset(0f, y),
+                    end = androidx.compose.ui.geometry.Offset(size.width, y + (index % 2) * 28f - 14f),
+                    strokeWidth = 2.5f,
+                    cap = StrokeCap.Round,
+                )
+            }
+            repeat(5) { index ->
+                val x = size.width * (0.12f + index * 0.19f)
+                drawLine(
+                    color = road,
+                    start = androidx.compose.ui.geometry.Offset(x, 0f),
+                    end = androidx.compose.ui.geometry.Offset(x + (index % 2) * 32f - 16f, size.height),
+                    strokeWidth = 2f,
+                    cap = StrokeCap.Round,
+                )
+            }
+            val river = Path().apply {
+                moveTo(size.width * 0.86f, 0f)
+                cubicTo(size.width * 0.78f, size.height * 0.32f, size.width * 0.96f, size.height * 0.56f, size.width * 0.82f, size.height)
+            }
+            drawPath(river, color = water, style = Stroke(width = 38f, cap = StrokeCap.Round))
+            drawLine(
+                color = roadStrong,
+                start = androidx.compose.ui.geometry.Offset(size.width * 0.12f, size.height * 0.72f),
+                end = androidx.compose.ui.geometry.Offset(size.width * 0.84f, size.height * 0.18f),
+                strokeWidth = 4f,
+                cap = StrokeCap.Round,
+            )
+        }
+        if (location != null) {
+            Box(contentAlignment = Alignment.Center) {
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .background(primary.copy(alpha = 0.16f), CircleShape),
+                )
+                Surface(
+                    shape = CircleShape,
+                    color = primary.copy(alpha = 0.88f),
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shadowElevation = 6.dp,
+                ) {
+                    Icon(
+                        Icons.Outlined.DirectionsCar,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .padding(13.dp)
+                            .size(28.dp),
+                    )
+                }
+            }
+        } else {
+            Text(
+                tr("Waiting for vehicle location"),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+}
+
+private fun openLocationInMaps(uriHandler: androidx.compose.ui.platform.UriHandler, location: CarLocation) {
+    val label = Uri.encode(location.address ?: "G700")
+    val uri = "geo:${location.lat},${location.lon}?q=${location.lat},${location.lon}($label)"
+    uriHandler.openUri(uri)
+}
+
+@Composable
+private fun formatLocationUpdatedText(value: Long, recent: Boolean): String =
+    if (recent) tr("Updated just now") else "${tr("Updated")} ${formatFriendlyRefreshTime(value)}"
+
+@Composable
 private fun TelemetryGrid(state: RemoteUiState) {
     Section(tr("Vehicle")) {
         val tiles = listOf(
@@ -3071,6 +3436,7 @@ private fun HeroCommandButton(
     enabled: Boolean,
     loading: Boolean = false,
     danger: Boolean = false,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -3086,7 +3452,7 @@ private fun HeroCommandButton(
         label = "hero-command-size",
     )
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .size(size)
             .graphicsLayer {
                 scaleX = scale
@@ -3645,7 +4011,7 @@ private fun RemoteConnectionState.label(): String = when (this) {
     RemoteConnectionState.DiscoveringServices -> tr("Discovering")
     RemoteConnectionState.EnablingNotifications -> tr("Subscribing")
     RemoteConnectionState.Handshaking -> tr("Handshaking")
-    is RemoteConnectionState.Ready -> "${tr("Connected")} ${transport.label()}"
+    is RemoteConnectionState.Ready -> tr("Connected")
     is RemoteConnectionState.Error -> tr("Error")
 }
 
@@ -3661,9 +4027,7 @@ private fun connectionStatusLine(state: RemoteUiState): String =
 @Composable
 private fun lastRefreshStatusLine(state: RemoteUiState): String {
     val refreshedAt = state.lastStatusRefreshMillis ?: return tr("No status yet")
-    val isCurrent = state.connectionState is RemoteConnectionState.Ready &&
-        System.currentTimeMillis() - refreshedAt < 120_000
-    return if (isCurrent) tr("Current") else "${tr("Last status")} ${formatFriendlyRefreshTime(refreshedAt)}"
+    return "${tr("Last status")} ${formatFriendlyRefreshTime(refreshedAt)}"
 }
 
 private fun RemoteUiState.headerTransportIcon(): ImageVector {
@@ -3727,18 +4091,51 @@ private fun formatTimeAgo(value: Long): String =
 
 @Composable
 private fun formatFriendlyRefreshTime(value: Long): String {
-    val now = Calendar.getInstance()
-    val date = Calendar.getInstance().apply { timeInMillis = value }
-    val time = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(value))
-    return if (
-        now.get(Calendar.YEAR) == date.get(Calendar.YEAR) &&
-        now.get(Calendar.DAY_OF_YEAR) == date.get(Calendar.DAY_OF_YEAR)
-    ) {
-        "${tr("Today")}, $time"
-    } else {
-        SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(value))
+    val dayStart = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+    val dateDayStart = Calendar.getInstance().apply {
+        timeInMillis = value
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+    val dayDiff = ((dayStart - dateDayStart) / 86_400_000L).toInt()
+    val language = LocalAppLanguage.current
+    val time = formatFriendlyClock(value, language)
+    return when {
+        dayDiff <= 0 -> "${tr("Today")}, $time"
+        dayDiff == 1 -> "${tr("Yesterday")}, $time"
+        dayDiff in 2..7 -> "${formatDaysAgo(dayDiff, language)}, $time"
+        else -> SimpleDateFormat("d MMM", if (language == AppLanguage.Arabic) Locale.forLanguageTag("ar-BH") else Locale.ENGLISH)
+            .format(Date(value))
     }
 }
+
+private fun formatFriendlyClock(value: Long, language: AppLanguage): String {
+    val date = Date(value)
+    if (language != AppLanguage.Arabic) return SimpleDateFormat("h:mm a", Locale.ENGLISH).format(date)
+    val calendar = Calendar.getInstance().apply { timeInMillis = value }
+    val hour = calendar.get(Calendar.HOUR)
+        .let { if (it == 0) 12 else it }
+    val minute = calendar.get(Calendar.MINUTE).toString().padStart(2, '0')
+    val suffix = if (calendar.get(Calendar.AM_PM) == Calendar.AM) "صباحاً" else "مساءً"
+    return "$hour:$minute $suffix"
+}
+
+private fun formatDaysAgo(days: Int, language: AppLanguage): String =
+    if (language == AppLanguage.Arabic) {
+        when (days) {
+            2 -> "قبل يومين"
+            else -> "قبل $days أيام"
+        }
+    } else {
+        "$days days ago"
+    }
 
 private fun formatChargeMode(value: String?): String? =
     value?.uppercase()?.replace('_', ' ')
@@ -3856,25 +4253,25 @@ private fun releaseNotes(language: AppLanguage): ReleaseNotesCopy =
     if (language == AppLanguage.Arabic) {
         ReleaseNotesCopy(
             title = "ما الجديد في الإصدار ${BuildConfig.VERSION_NAME}",
-            intro = "تحسينات هذا الإصدار تركز على شريط الاتصال، الإعدادات، وإشعار التحكم السريع.",
+            intro = "تحسينات هذا الإصدار تركز على الصفحة الرئيسية، موقع السيارة، ومزامنة الحالة عند الاقتراب.",
             items = listOf(
-                "أصبح شريط الاتصال أوضح: عند الاتصال يظهر نوع الاتصال BLE أو LAN مع الأيقونة بجانب الحالة، واسم السيارة في السطر التالي.",
-                "تم ترتيب الإعدادات بحيث تكون خيارات الاتصال في الأعلى، بينما انتقل الاقتران إلى أسفل الصفحة كقسم للقراءة وإعادة الإعداد فقط.",
-                "عند نسيان الاقتران، يمكنك اختيار الإبقاء على سجل الروابط أو مسحه مع تأكيد واضح.",
-                "إيقاظ التطبيق عند الاقتراب أصبح مفعلاً افتراضياً للتثبيت الجديد، بدون زر إعداد إضافي قد يسبب تعطل التطبيق.",
-                "إشعار التحكم عند الاتصال أصبح أكثر ثباتاً وأقل قابلية للإزالة بالخطأ.",
+                "تمت إعادة تصميم الصفحة الرئيسية لتظهر أهم معلومات السيارة حول زر القفل بشكل أوضح وأسرع قراءة.",
+                "تمت إضافة بطاقة موقع السيارة مع آخر موقع معروف وخيار فتح الاتجاهات من الهاتف.",
+                "تحسّن تحديث الحالة عند الاقتراب من السيارة عبر BLE لتحديث آخر حالة وموقع عند الإمكان بدون فتح التطبيق يدوياً.",
+                "تحسّن عرض آخر تحديث بالتواريخ القريبة مثل اليوم وأمس وقبل عدة أيام، مع صياغة عربية أوضح للوقت.",
+                "تمت إضافة أساس تقني لتحسين الاستقرار وفهم استخدام الميزات ودعم قدرات مستقبلية.",
             ),
         )
     } else {
         ReleaseNotesCopy(
             title = "What's new in ${BuildConfig.VERSION_NAME}",
-            intro = "This update focuses on the connection header, Settings, and the connected quick-control notification.",
+            intro = "This update focuses on the Home screen, vehicle location, and nearby wake syncing.",
             items = listOf(
-                "The header is cleaner: when connected, BLE or LAN appears with its icon beside the status, and the car name moves to the next line.",
-                "Settings now puts connectivity controls at the top and moves pairing to the bottom as a read-only reset section.",
-                "Forgetting the paired car now asks whether to keep or clear shared-link history.",
-                "Wake when nearby is enabled by default for new installs, with no extra companion setup button in Settings.",
-                "The connected quick-control notification is now harder to dismiss accidentally while the car is connected.",
+                "Home now shows key vehicle information around the lock control for faster reading.",
+                "Added a vehicle-location card with the last known location and a directions shortcut.",
+                "Nearby BLE wake now performs a short sync attempt when possible, so the last status and location stay fresher.",
+                "Last-status timestamps now read better across today, yesterday, recent days, and Arabic time wording.",
+                "Added a technical foundation for better stability, feature understanding, and future capabilities.",
             ),
         )
     }
@@ -3887,6 +4284,9 @@ private val ArabicTranslations = mapOf(
     "Cancel" to "إلغاء",
     "Back" to "رجوع",
     "Connect" to "اتصال",
+    "Connect to Control" to "اتصل للتحكم",
+    "Tap to lock" to "اضغط للقفل",
+    "Tap to unlock" to "اضغط للفتح",
     "DisplayMirror disconnected" to "انقطع الاتصال مع DisplayMirror",
     "Bluetooth permission required" to "يلزم إذن البلوتوث",
     "G700 Remote scans for the DisplayMirror BLE service and can also discover DisplayMirror over LAN." to "يبحث G700 Remote عن خدمة DisplayMirror عبر البلوتوث ويمكنه اكتشافها عبر الشبكة المحلية.",
@@ -3942,6 +4342,19 @@ private val ArabicTranslations = mapOf(
     "Lock state Unknown" to "حالة القفل غير معروفة",
     "Ready for remote commands" to "جاهز لأوامر التحكم عن بعد",
     "Connect to DisplayMirror" to "اتصل بتطبيق DisplayMirror",
+    "Vehicle location" to "موقع السيارة",
+    "No location yet" to "لا يوجد موقع بعد",
+    "Updated just now" to "تم التحديث الآن",
+    "Updated" to "تم التحديث",
+    "Location will appear after the car reports it." to "سيظهر الموقع بعد أن ترسله السيارة.",
+    "Directions" to "الاتجاهات",
+    "Source: car" to "المصدر: السيارة",
+    "Source: phone near car" to "المصدر: الهاتف قرب السيارة",
+    "Waiting for vehicle location" to "بانتظار موقع السيارة",
+    "Vehicle location source" to "مصدر موقع السيارة",
+    "From car" to "من السيارة",
+    "Phone near car" to "الهاتف قرب السيارة",
+    "Default uses DisplayMirror location when available. Phone location is only used while connected over BLE and permission is granted." to "الافتراضي يستخدم موقع DisplayMirror عند توفره. يتم استخدام موقع الهاتف فقط أثناء الاتصال عبر BLE وبعد منح الإذن.",
     "Raw state" to "القيمة الخام",
     "Unknown" to "غير معروف",
     "Quick Actions" to "إجراءات سريعة",
@@ -4070,6 +4483,7 @@ private val ArabicTranslations = mapOf(
     "Current" to "حالي",
     "No status yet" to "لا توجد حالة بعد",
     "Today" to "اليوم",
+    "Yesterday" to "أمس",
     "Connected notification" to "إشعار الاتصال",
     "Keep a persistent notification with light status and quick actions while connected." to "يعرض إشعاراً مستمراً عند الاتصال مع حالة مختصرة وأزرار سريعة.",
     "Wake when nearby" to "الإيقاظ عند الاقتراب",

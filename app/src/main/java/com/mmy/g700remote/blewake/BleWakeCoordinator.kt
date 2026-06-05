@@ -47,6 +47,7 @@ object BleWakeCoordinator {
         }
 
         repository.connectSaved()
+        enqueueReconnectWork(appContext)
         val started = startForegroundControls(
             appContext,
             fromBackground = true,
@@ -54,7 +55,6 @@ object BleWakeCoordinator {
             source = source,
         )
         if (!started) {
-            enqueueReconnectWork(appContext)
             showTapToActivateNotification(appContext, "G700 is nearby. Tap to activate controls.")
         }
     }

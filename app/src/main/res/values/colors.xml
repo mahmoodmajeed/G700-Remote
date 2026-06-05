@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <color name="notification_accent">#0C7A57</color>
     <color name="g700_background">#F7F8F6</color>
     <color name="g700_background_dark">#111412</color>
     <color name="black">#FF000000</color>

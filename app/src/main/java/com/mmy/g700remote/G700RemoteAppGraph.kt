@@ -41,6 +41,7 @@ object G700RemoteAppGraph {
     private fun createRepository(context: Context): RemoteRepository {
         val settings = settings(context)
         return RemoteRepository(
+            context = context,
             transport = CompositeDisplayMirrorTransport(
                 ble = DisplayMirrorBleClient(
                     context,

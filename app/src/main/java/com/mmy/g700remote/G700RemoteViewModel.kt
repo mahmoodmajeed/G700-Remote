@@ -12,6 +12,7 @@ import com.mmy.g700remote.data.AppLanguage
 import com.mmy.g700remote.data.AppColorMode
 import com.mmy.g700remote.data.AppIconTheme
 import com.mmy.g700remote.data.AppTheme
+import com.mmy.g700remote.data.CarLocationPreference
 import com.mmy.g700remote.data.RemoteUiState
 import com.mmy.g700remote.data.AppUpdateInfo
 import com.mmy.g700remote.data.AppUpdateState
@@ -86,6 +87,7 @@ class G700RemoteViewModel(application: Application) : AndroidViewModel(applicati
     fun setLockStateMapping(mapping: LockStateMapping) = repository.setLockStateMapping(mapping)
     fun setLoggingEnabled(enabled: Boolean) = repository.setLoggingEnabled(enabled)
     fun setConnectedNotificationEnabled(enabled: Boolean) = repository.setConnectedNotificationEnabled(enabled)
+    fun setCarLocationPreference(preference: CarLocationPreference) = repository.setCarLocationPreference(preference)
     fun markReleaseNotesSeen(version: String) = repository.markReleaseNotesSeen(version)
     fun refreshNow() = repository.refreshNow()
     fun sendSharedNavigation(text: String, onResult: (NavigationShareResult) -> Unit = {}) =

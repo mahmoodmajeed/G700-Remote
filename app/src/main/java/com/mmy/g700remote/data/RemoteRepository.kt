@@ -1,10 +1,13 @@
 package com.mmy.g700remote.data
 
+import android.content.Context
 import android.net.Uri
+import com.mmy.g700remote.analytics.G700Analytics
 import com.mmy.g700remote.ble.DisplayMirrorTransport
 import com.mmy.g700remote.ble.RemoteConnectionState
 import com.mmy.g700remote.ble.ScannedDevice
 import com.mmy.g700remote.ble.ConnectionPreference
+import com.mmy.g700remote.ble.TransportKind
 import com.mmy.g700remote.protocol.RemoteCommand
 import com.mmy.g700remote.protocol.NavigationShareParser
 import com.mmy.g700remote.protocol.RemoteProtocolCodec
@@ -29,12 +32,36 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
-class RemoteRepository(
+class RemoteRepository private constructor(
+    private val locationResolver: CarLocationProvider,
     private val transport: DisplayMirrorTransport,
     private val settings: SettingsStore,
     private val scope: CoroutineScope,
 ) {
+    constructor(
+        context: Context,
+        transport: DisplayMirrorTransport,
+        settings: SettingsStore,
+        scope: CoroutineScope,
+    ) : this(
+        locationResolver = CarLocationResolver(context.applicationContext),
+        transport = transport,
+        settings = settings,
+        scope = scope,
+    )
+
+    constructor(
+        transport: DisplayMirrorTransport,
+        settings: SettingsStore,
+        scope: CoroutineScope,
+    ) : this(
+        locationResolver = NoopCarLocationProvider,
+        transport = transport,
+        settings = settings,
+        scope = scope,
+    )
     private val storedStatus = settings.getLastVehicleStatus()
     private val _uiState = MutableStateFlow(
         RemoteUiState(
@@ -54,6 +81,8 @@ class RemoteRepository(
             localAuthEnabled = settings.isLocalAuthEnabled(),
             lockStateMapping = LockStateMapping.State1Locked,
             loggingEnabled = settings.isLoggingEnabled(),
+            carLocation = storedStatus?.carLocation,
+            carLocationPreference = settings.getCarLocationPreference(),
             navigationHistory = settings.getNavigationHistory(),
             connectedNotificationEnabled = settings.isConnectedNotificationEnabled(),
             lastStatusRefreshMillis = storedStatus?.lastRefreshMillis,
@@ -66,6 +95,7 @@ class RemoteRepository(
     private var refreshJob: Job? = null
     private var backgroundRefreshJob: Job? = null
     private var backgroundDisconnectJob: Job? = null
+    private var lastLocationRefreshMillis: Long = 0L
 
     init {
         scope.launch {
@@ -190,6 +220,11 @@ class RemoteRepository(
         }
     }
 
+    fun setCarLocationPreference(preference: CarLocationPreference) {
+        settings.setCarLocationPreference(preference)
+        _uiState.update { it.copy(carLocationPreference = preference) }
+    }
+
     fun markReleaseNotesSeen(version: String) {
         settings.setLastSeenReleaseNotesVersion(version)
         _uiState.update { it.copy(lastSeenReleaseNotesVersion = version) }
@@ -283,7 +318,20 @@ class RemoteRepository(
 
     fun refreshNow() {
         scope.launch {
-            refreshAll()
+            refreshAll(forceLocation = true)
+        }
+    }
+
+    suspend fun refreshFromBleWake(timeoutMillis: Long = 18_000L) {
+        if (_uiState.value.pairedDevice == null) return
+        connectSaved()
+        runCatching {
+            withTimeout(timeoutMillis.coerceAtLeast(4_000L)) {
+                transport.connectionState.first { it is RemoteConnectionState.Ready }
+            }
+        }.onFailure { G700Analytics.nonFatal(it, "ble_wake_connect") }
+        if (_uiState.value.connectionState is RemoteConnectionState.Ready) {
+            refreshAll(forceLocation = true)
         }
     }
 
@@ -434,11 +482,31 @@ class RemoteRepository(
         }
     }
 
-    private suspend fun refreshAll() {
+    private suspend fun refreshAll(forceLocation: Boolean = false) {
         sendForRefresh(RemoteCommand.Status)
         sendForRefresh(RemoteCommand.Climate(ClimateAction.Status))
         sendForRefresh(RemoteCommand.ParkingCharge(ParkingChargeAction.Status))
         sendForRefresh(RemoteCommand.RaceCharge(RaceChargeAction.Status))
+        refreshLocationIfDue(forceLocation)
+    }
+
+    private suspend fun refreshLocationIfDue(force: Boolean) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastLocationRefreshMillis < LOCATION_REFRESH_INTERVAL_MS) return
+        lastLocationRefreshMillis = now
+        if (
+            _uiState.value.carLocationPreference == CarLocationPreference.PhoneWhenBle &&
+            _uiState.value.connectionState is RemoteConnectionState.Ready &&
+            (_uiState.value.connectionState as RemoteConnectionState.Ready).transport == TransportKind.Ble
+        ) {
+            val phoneLocation = locationResolver.phoneLocationWhenAllowed()
+            if (phoneLocation != null) {
+                updateCarLocation(phoneLocation)
+                resolveCarLocationAddress(phoneLocation)
+                return
+            }
+        }
+        sendForRefresh(RemoteCommand.GetLocation)
     }
 
     private suspend fun sendImmediate(command: RemoteCommand, showNavigationStatus: Boolean = true): Boolean {
@@ -551,11 +619,18 @@ class RemoteRepository(
                 )
             }
 
-            is RemoteResponse.Location -> _uiState.update {
-                if (response.lat != null && response.lon != null) {
-                    it.copy(carLocation = CarLocation(response.lat, response.lon))
-                } else {
-                    it
+            is RemoteResponse.Location -> {
+                val lat = response.lat
+                val lon = response.lon
+                if (lat != null && lon != null) {
+                    val location = CarLocation(
+                        lat = lat,
+                        lon = lon,
+                        source = CarLocationSource.DisplayMirror,
+                        updatedAtMillis = System.currentTimeMillis(),
+                    )
+                    updateCarLocation(location)
+                    resolveCarLocationAddress(location)
                 }
             }
 
@@ -861,6 +936,27 @@ class RemoteRepository(
         persistSnapshot()
     }
 
+    private fun updateCarLocation(location: CarLocation) {
+        _uiState.update { it.copy(carLocation = location) }
+        persistSnapshot()
+    }
+
+    private fun resolveCarLocationAddress(location: CarLocation) {
+        scope.launch {
+            val resolved = locationResolver.withResolvedAddress(location)
+            if (resolved.address != location.address) {
+                _uiState.update { state ->
+                    if (state.carLocation?.updatedAtMillis == location.updatedAtMillis) {
+                        state.copy(carLocation = resolved)
+                    } else {
+                        state
+                    }
+                }
+                persistSnapshot()
+            }
+        }
+    }
+
     private fun persistSnapshot() {
         val state = _uiState.value
         val timestamp = state.lastStatusRefreshMillis ?: return
@@ -868,11 +964,13 @@ class RemoteRepository(
             VehicleStatusSnapshot(
                 telemetry = state.telemetry,
                 lastRefreshMillis = timestamp,
+                carLocation = state.carLocation,
             ),
         )
     }
 
     private companion object {
         const val MAX_NAV_HISTORY = 50
+        const val LOCATION_REFRESH_INTERVAL_MS = 60_000L
     }
 }
