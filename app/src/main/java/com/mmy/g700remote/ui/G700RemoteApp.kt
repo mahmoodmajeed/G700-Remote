@@ -1,16 +1,21 @@
 ﻿package com.mmy.g700remote.ui
 
+import android.Manifest
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas as AndroidCanvas
 import android.graphics.Paint
 import android.graphics.RectF
+import android.location.Location
+import android.location.LocationManager
 import android.net.Uri
+import android.os.CancellationSignal
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -79,6 +84,7 @@ import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.OpenInFull
+import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Send
@@ -121,6 +127,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -154,10 +161,12 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.content.ContextCompat
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.LatLngBounds
 import com.google.android.gms.maps.model.MapStyleOptions
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
@@ -206,8 +215,13 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlin.coroutines.resume
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 private val LocalAppLanguage = staticCompositionLocalOf { AppLanguage.English }
 private const val DISPLAY_MIRROR_PROJECT_URL = "https://github.com/Baghdady92/DisplayMirror"
@@ -240,8 +254,10 @@ fun G700RemoteApp(
     permissionsGranted: Boolean,
     sharedNavigationText: String?,
     showUpdates: Boolean,
+    forceUpdateCheckRequest: Int,
     onSharedNavigationConsumed: () -> Unit,
     onUpdatesShown: () -> Unit,
+    onForceUpdateCheckConsumed: () -> Unit,
     onRequestPermissions: () -> Unit,
     onShareLog: (String) -> Unit,
     viewModel: G700RemoteViewModel = viewModel(),
@@ -473,6 +489,14 @@ fun G700RemoteApp(
         if (!text.isNullOrBlank()) {
             sendNavigationText(text)
             onSharedNavigationConsumed()
+        }
+    }
+
+    LaunchedEffect(forceUpdateCheckRequest) {
+        if (forceUpdateCheckRequest > 0) {
+            requestedTab = AppTab.Settings
+            viewModel.checkForUpdates()
+            onForceUpdateCheckConsumed()
         }
     }
 
@@ -1162,16 +1186,14 @@ private fun MainRemoteScaffold(
         modifier = Modifier.padding(contentPadding),
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            if (tab != AppTab.VehicleMap) {
-                ConnectionHeader(
-                    state = state,
-                    onHome = { tab = AppTab.Home },
-                    onReconnect = onReconnect,
-                    onRefresh = runRefresh,
-                    onOpenHistory = { tab = AppTab.NavigationHistory },
-                    onOpenSettings = { tab = AppTab.Settings },
-                )
-            }
+            ConnectionHeader(
+                state = state,
+                onHome = { tab = AppTab.Home },
+                onReconnect = onReconnect,
+                onRefresh = runRefresh,
+                onOpenHistory = { tab = AppTab.NavigationHistory },
+                onOpenSettings = { tab = AppTab.Settings },
+            )
         },
         bottomBar = {
             FloatingNavBar(
@@ -1191,6 +1213,8 @@ private fun MainRemoteScaffold(
                     onCommand = onCommand,
                     onUserNotice = onUserNotice,
                     onOpenMap = { tab = AppTab.VehicleMap },
+                    isRefreshing = pullRefreshing,
+                    onRefresh = runRefresh,
                     modifier = screenModifier,
                 )
                 AppTab.Climate -> ClimateScreen(state, onCommand, onUserNotice, screenModifier)
@@ -1244,8 +1268,7 @@ private fun MainRemoteScaffold(
             modifier = modifier,
             transitionSpec = {
                 if (targetState == AppTab.VehicleMap || initialState == AppTab.VehicleMap) {
-                    (fadeIn(animationSpec = tween(140)) + scaleIn(initialScale = 0.96f)) togetherWith
-                        (fadeOut(animationSpec = tween(90)) + scaleOut(targetScale = 1.03f))
+                    fadeIn(animationSpec = tween(110)) togetherWith fadeOut(animationSpec = tween(70))
                 } else {
                     fadeIn(animationSpec = tween(90)) togetherWith fadeOut(animationSpec = tween(90))
                 }
@@ -1253,7 +1276,7 @@ private fun MainRemoteScaffold(
             label = "main-tab-content",
         ) { activeTab ->
             val screenModifier = Modifier.fillMaxSize()
-            if (activeTab == AppTab.VehicleMap) {
+            if (activeTab == AppTab.VehicleMap || activeTab == AppTab.Home) {
                 screenContent(activeTab, screenModifier)
             } else {
                 PullToRefreshBox(
@@ -1668,6 +1691,8 @@ private fun HomeScreen(
     onCommand: (RemoteCommand) -> Unit,
     onUserNotice: (String) -> Unit,
     onOpenMap: () -> Unit,
+    isRefreshing: Boolean,
+    onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val ready = state.connectionState is RemoteConnectionState.Ready
@@ -1702,6 +1727,21 @@ private fun HomeScreen(
                 onUserNotice = onUserNotice,
             )
         }
+        val homeControl = @Composable {
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = onRefresh,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                HomeControlDashboard(
+                    state = state,
+                    ready = ready,
+                    lockActionIsUnlock = lockActionIsUnlock,
+                    lockPending = lockPending,
+                    onCommand = onCommand,
+                )
+            }
+        }
 
         if (roomyHome) {
             LazyColumn(
@@ -1715,13 +1755,7 @@ private fun HomeScreen(
                             .fillParentMaxHeight(),
                         verticalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        HomeControlDashboard(
-                            state = state,
-                            ready = ready,
-                            lockActionIsUnlock = lockActionIsUnlock,
-                            lockPending = lockPending,
-                            onCommand = onCommand,
-                        )
+                        homeControl()
                         VehicleLocationCard(state, mapHeight = locationMapHeight, onOpenMap = onOpenMap)
                         quickActions()
                     }
@@ -1734,13 +1768,7 @@ private fun HomeScreen(
                 verticalArrangement = Arrangement.spacedBy(sectionGap),
             ) {
                 item {
-                    HomeControlDashboard(
-                        state = state,
-                        ready = ready,
-                        lockActionIsUnlock = lockActionIsUnlock,
-                        lockPending = lockPending,
-                        onCommand = onCommand,
-                    )
+                    homeControl()
                 }
                 item {
                     VehicleLocationCard(state, mapHeight = locationMapHeight, onOpenMap = onOpenMap)
@@ -3338,13 +3366,16 @@ private fun VehicleLocationCard(
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.End,
         ) {
             Text(
-                tr("Vehicle location"),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f),
+                location?.let { formatLocationUpdatedText(it.updatedAtMillis, recent) } ?: tr("No location yet"),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
+            Spacer(Modifier.width(8.dp))
             Box(
                 modifier = Modifier
                     .size(9.dp)
@@ -3357,14 +3388,6 @@ private fun VehicleLocationCard(
                         color = if (recent) MaterialTheme.colorScheme.primary else Color.Transparent,
                         shape = CircleShape,
                     ),
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                location?.let { formatLocationUpdatedText(it.updatedAtMillis, recent) } ?: tr("No location yet"),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
         Surface(
@@ -3419,13 +3442,18 @@ private fun VehicleLocationCard(
                         )
                         location?.let {
                             Spacer(Modifier.height(2.dp))
-                            Text(
-                                "${tr("Source")}: ${carLocationSourceLabel(it.source)}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Text(
+                                    tr("Source"),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                )
+                                LocationSourcePill(it.source)
+                            }
                         }
                     }
                     OutlinedButton(
@@ -3445,6 +3473,43 @@ private fun VehicleLocationCard(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun LocationSourcePill(
+    source: CarLocationSource,
+    modifier: Modifier = Modifier,
+) {
+    val icon = when (source) {
+        CarLocationSource.DisplayMirror -> Icons.Outlined.DirectionsCar
+        CarLocationSource.PhoneBle -> Icons.Outlined.PhoneAndroid
+    }
+    Surface(
+        modifier = modifier,
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier.size(13.dp),
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            Text(
+                carLocationSourceLabel(source),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                maxLines = 1,
+            )
         }
     }
 }
@@ -3522,7 +3587,7 @@ private fun VehicleMapScreen(
                         val coordinatesLabel = tr("Coordinates")
                         val copiedLabel = tr("Copied")
                         val recent = System.currentTimeMillis() - location.updatedAtMillis < 60_000L
-                        val meta = "${carLocationSourceLabel(location.source)} · ${formatLocationUpdatedText(location.updatedAtMillis, recent)}"
+                        val updatedText = formatLocationUpdatedText(location.updatedAtMillis, recent)
                         Text(
                             address ?: tr("Vehicle location"),
                             style = MaterialTheme.typography.titleMedium,
@@ -3530,13 +3595,20 @@ private fun VehicleMapScreen(
                             maxLines = if (compact) 1 else 2,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        Text(
-                            meta,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            LocationSourcePill(location.source)
+                            Text(
+                                updatedText,
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -3743,6 +3815,7 @@ private fun VehicleMapContent(
         StylizedMapPreview(null)
         return
     }
+    val context = LocalContext.current
     val primary = MaterialTheme.colorScheme.primary.toArgb()
     val onPrimary = MaterialTheme.colorScheme.onPrimary.toArgb()
     val halo = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f).toArgb()
@@ -3760,17 +3833,36 @@ private fun VehicleMapContent(
         if (darkMap) MapStyleOptions(DARK_MAP_STYLE_JSON) else null
     }
     val carPoint = remember(location.lat, location.lon) { LatLng(location.lat, location.lon) }
+    val phonePoint by produceState<LatLng?>(null, context, location.lat, location.lon) {
+        while (true) {
+            value = currentPhoneLatLngWhenAllowed(context)
+            delay(if (compact) 30_000L else 20_000L)
+        }
+    }
+    val showPhoneLocation = hasFineLocationPermission(context)
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(carPoint, zoom)
     }
-    LaunchedEffect(location.lat, location.lon, zoom) {
-        cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(carPoint, zoom), durationMs = 650)
+    LaunchedEffect(mapLoaded, carPoint, phonePoint, zoom, compact) {
+        if (!mapLoaded) return@LaunchedEffect
+        val phone = phonePoint
+        val update = if (phone != null && distanceMeters(carPoint, phone) > 20f) {
+            val bounds = LatLngBounds.builder()
+                .include(carPoint)
+                .include(phone)
+                .build()
+            CameraUpdateFactory.newLatLngBounds(bounds, if (compact) 72 else 112)
+        } else {
+            CameraUpdateFactory.newLatLngZoom(carPoint, zoom)
+        }
+        cameraPositionState.animate(update, durationMs = if (compact) 420 else 520)
     }
     val markerState = remember(location.lat, location.lon) { MarkerState(carPoint) }
     GoogleMap(
         modifier = modifier,
         cameraPositionState = cameraPositionState,
         properties = MapProperties(
+            isMyLocationEnabled = showPhoneLocation,
             minZoomPreference = 12f,
             maxZoomPreference = 21f,
             mapStyleOptions = mapStyle,
@@ -3834,6 +3926,56 @@ private fun createCarLocationPinBitmap(primary: Int, onPrimary: Int, halo: Int):
     canvas.drawRoundRect(RectF(36f, 35f, 47f, 42f), 2f, 2f, paint)
     canvas.drawRoundRect(RectF(49f, 35f, 60f, 42f), 2f, 2f, paint)
     return bitmap
+}
+
+private fun hasFineLocationPermission(context: Context): Boolean =
+    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
+        PackageManager.PERMISSION_GRANTED
+
+private suspend fun currentPhoneLatLngWhenAllowed(context: Context): LatLng? =
+    withContext(Dispatchers.IO) {
+        val appContext = context.applicationContext
+        if (!hasFineLocationPermission(appContext)) return@withContext null
+        val manager = appContext.getSystemService(LocationManager::class.java) ?: return@withContext null
+        val fallback = latestKnownPhoneLatLng(manager)
+        val provider = listOf(
+            LocationManager.GPS_PROVIDER,
+            LocationManager.NETWORK_PROVIDER,
+            LocationManager.PASSIVE_PROVIDER,
+        ).firstOrNull { providerName ->
+            runCatching { manager.isProviderEnabled(providerName) }.getOrDefault(false)
+        } ?: return@withContext fallback
+        withTimeoutOrNull(3_500L) {
+            suspendCancellableCoroutine { continuation ->
+                val signal = CancellationSignal()
+                val executor = ContextCompat.getMainExecutor(appContext)
+                runCatching {
+                    manager.getCurrentLocation(provider, signal, executor) { location ->
+                        if (continuation.isActive) continuation.resume(location?.toLatLng())
+                    }
+                }.onFailure {
+                    if (continuation.isActive) continuation.resume(null)
+                }
+                continuation.invokeOnCancellation { signal.cancel() }
+            }
+        } ?: fallback
+    }
+
+private fun latestKnownPhoneLatLng(manager: LocationManager): LatLng? =
+    listOf(
+        LocationManager.GPS_PROVIDER,
+        LocationManager.NETWORK_PROVIDER,
+        LocationManager.PASSIVE_PROVIDER,
+    ).mapNotNull { provider ->
+        runCatching { manager.getLastKnownLocation(provider) }.getOrNull()
+    }.maxByOrNull(Location::getTime)?.toLatLng()
+
+private fun Location.toLatLng(): LatLng = LatLng(latitude, longitude)
+
+private fun distanceMeters(first: LatLng, second: LatLng): Float {
+    val results = FloatArray(1)
+    Location.distanceBetween(first.latitude, first.longitude, second.latitude, second.longitude, results)
+    return results[0]
 }
 
 private fun openDirectionsToLocation(context: Context, location: CarLocation) {
@@ -4950,13 +5092,12 @@ private fun releaseNotes(language: AppLanguage): ReleaseNotesCopy =
             title = "ما الجديد في الإصدار ${BuildConfig.VERSION_NAME}",
             intro = "تحسينات هذا الإصدار تركز على الصفحة الرئيسية، موقع السيارة، ومزامنة الحالة بسلاسة أكبر.",
             items = listOf(
-                "الصفحة الرئيسية أصبحت أوضح مع معلومات السيارة حول زر القفل وخريطة تفاعلية لموقع السيارة.",
-                "شاشة الخريطة الأكبر أصبحت أبسط، تدعم الوضع الداكن، وتعرض العنوان، المصدر، آخر تحديث، والإحداثيات في سطر واحد.",
-                "أضيفت خيارات واضحة لموقع السيارة: فتح الموقع، بدء الملاحة، ونسخ الإحداثيات.",
-                "السحب للتحديث أصبح يعمل بشكل أفضل في الصفحات المناسبة بدون التعارض مع تحريك الخريطة.",
-                "تحسّن تحديث الحالة عند الاقتراب من السيارة عبر BLE وتوضيح أوقات آخر حالة.",
-                "تحسينات تقنية لإدارة المفاتيح محلياً ودعم الاستقرار والميزات القادمة.",
-                "إصلاحات وتحسينات بسيطة للتخطيط والخرائط.",
+                "الصفحة الرئيسية أصبحت أنظف مع معلومات السيارة حول زر القفل وخريطة تفاعلية لموقع السيارة.",
+                "الخريطة تعرض موقع السيارة وموقع الهاتف عند توفره، مع وضع داكن وتفاصيل عنوان أوضح.",
+                "شاشة الخريطة الأكبر تعرض المصدر بشكل أنيق، وتوفر فتح الموقع، بدء الملاحة، ونسخ الإحداثيات.",
+                "السحب للتحديث أصبح محصوراً في الجزء المناسب حتى لا يتعارض مع تحريك الخريطة.",
+                "إشعارات التحديث يمكنها الآن تشغيل فحص تحديث مباشر عند وصول تنبيه مهم من Firebase.",
+                "تحسينات في حركة الانتقال للخريطة، محاذاة أيقونة التطبيق، وإصلاحات بسيطة للتخطيط والاستقرار.",
             ),
         )
     } else {
@@ -4965,12 +5106,11 @@ private fun releaseNotes(language: AppLanguage): ReleaseNotesCopy =
             intro = "This update focuses on the Home screen, vehicle location, and smoother status syncing.",
             items = listOf(
                 "Home is cleaner, with key vehicle information around the lock control and an interactive vehicle-location map.",
-                "The expanded map is simpler, follows dark mode, and shows address, source, last update, and coordinates in one clean details area.",
-                "Vehicle location now has clear actions: open location, start navigation, or copy coordinates.",
-                "Pull to refresh works better on suitable pages without fighting map gestures.",
-                "Nearby BLE wake and last-status wording were refined so recent status feels clearer.",
-                "Technical key handling was tightened for safer local setup and future capabilities.",
-                "Minor bug fixes and map/layout polish.",
+                "The map now shows the car and your phone location when available, follows dark mode, and uses clearer address details.",
+                "The expanded map has a tidy source chip plus clear actions to open location, start navigation, or copy coordinates.",
+                "Pull to refresh is limited to the right area so it no longer fights map gestures.",
+                "Update notifications can now trigger an immediate update check from Firebase messages.",
+                "Map transitions, launcher-icon alignment, layout polish, and stability were refined.",
             ),
         )
     }

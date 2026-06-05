@@ -124,6 +124,7 @@ class AppUpdateManager(private val context: Context) {
         private const val UPDATE_PREFS = "g700_update_state"
         private const val KEY_LAST_SUCCESSFUL_CHECK = "last_successful_check"
         private const val KEY_AVAILABLE_UPDATE = "available_update"
+        private const val KEY_FORCE_UPDATE_PENDING = "force_update_pending"
         private const val MAX_CHECK_AGE_MS = 7L * 24L * 60L * 60L * 1000L
 
         fun scheduleBackgroundChecks(context: Context) {
@@ -145,6 +146,23 @@ class AppUpdateManager(private val context: Context) {
             val info = fetchLatestUpdate(context)
             recordSuccessfulCheck(context, info)
             return info
+        }
+
+        fun markForceUpdateCheckPending(context: Context) {
+            context.applicationContext
+                .getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_FORCE_UPDATE_PENDING, true)
+                .apply()
+        }
+
+        fun consumeForceUpdateCheckPending(context: Context): Boolean {
+            val prefs = context.applicationContext.getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE)
+            val pending = prefs.getBoolean(KEY_FORCE_UPDATE_PENDING, false)
+            if (pending) {
+                prefs.edit().remove(KEY_FORCE_UPDATE_PENDING).apply()
+            }
+            return pending
         }
 
         suspend fun fetchLatestUpdate(context: Context): AppUpdateInfo? =

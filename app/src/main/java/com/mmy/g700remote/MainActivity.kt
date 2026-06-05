@@ -18,6 +18,7 @@ class MainActivity : ComponentActivity() {
     private val permissionsGranted = mutableStateOf(false)
     private val sharedNavigationText = mutableStateOf<String?>(null)
     private val showUpdates = mutableStateOf(false)
+    private val forceUpdateCheckRequest = mutableStateOf(0)
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) {
@@ -33,6 +34,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         AppUpdateManager.scheduleBackgroundChecks(this)
         handleIncomingIntent(intent)
+        consumePendingForceUpdateCheck()
         requestNotificationPermissionIfNeeded()
         permissionsGranted.value = hasRequiredPermissions()
         setContent {
@@ -41,8 +43,10 @@ class MainActivity : ComponentActivity() {
                 permissionsGranted = permissionsGranted.value,
                 sharedNavigationText = sharedNavigationText.value,
                 showUpdates = showUpdates.value,
+                forceUpdateCheckRequest = forceUpdateCheckRequest.value,
                 onSharedNavigationConsumed = { sharedNavigationText.value = null },
                 onUpdatesShown = { showUpdates.value = false },
+                onForceUpdateCheckConsumed = { forceUpdateCheckRequest.value = 0 },
                 onRequestPermissions = { permissionLauncher.launch(requiredPermissions()) },
                 onShareLog = { text ->
                     startActivity(
@@ -66,6 +70,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIncomingIntent(intent: Intent?) {
+        if (intent.requestsForceUpdateCheck()) {
+            AppUpdateManager.consumeForceUpdateCheckPending(this)
+            requestForceUpdateCheck()
+            return
+        }
         when (intent?.action) {
             Intent.ACTION_SEND -> {
                 val text = intent.getStringExtra(Intent.EXTRA_TEXT)
@@ -78,6 +87,25 @@ class MainActivity : ComponentActivity() {
             }
             ACTION_SHOW_UPDATES -> showUpdates.value = true
         }
+    }
+
+    private fun consumePendingForceUpdateCheck() {
+        if (AppUpdateManager.consumeForceUpdateCheckPending(this)) {
+            requestForceUpdateCheck()
+        }
+    }
+
+    private fun requestForceUpdateCheck() {
+        showUpdates.value = true
+        forceUpdateCheckRequest.value += 1
+    }
+
+    private fun Intent?.requestsForceUpdateCheck(): Boolean {
+        if (this == null) return false
+        if (action == ACTION_FORCE_UPDATE_CHECK) return true
+        return getStringExtra(EXTRA_FORCE_UPDATE)
+            ?.trim()
+            ?.equals("1", ignoreCase = true) == true
     }
 
     private fun hasRequiredPermissions(): Boolean =
@@ -113,5 +141,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val ACTION_SHOW_UPDATES = "com.mmy.g700remote.action.SHOW_UPDATES"
+        const val ACTION_FORCE_UPDATE_CHECK = "com.mmy.g700remote.action.FORCE_UPDATE_CHECK"
+        const val EXTRA_FORCE_UPDATE = "forceupdate"
     }
 }

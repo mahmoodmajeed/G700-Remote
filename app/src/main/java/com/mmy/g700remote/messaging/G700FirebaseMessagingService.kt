@@ -12,6 +12,7 @@ import com.google.firebase.messaging.RemoteMessage
 import com.mmy.g700remote.MainActivity
 import com.mmy.g700remote.R
 import com.mmy.g700remote.analytics.G700Analytics
+import com.mmy.g700remote.update.AppUpdateManager
 
 class G700FirebaseMessagingService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
@@ -21,22 +22,33 @@ class G700FirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
+        val forceUpdate = message.data["forceupdate"]?.trim() == "1"
+        if (forceUpdate) {
+            AppUpdateManager.markForceUpdateCheckPending(this)
+            G700Analytics.settingChanged("fcm_force_update", "received")
+        }
         val title = message.notification?.title
             ?: message.data["title"]
+            ?: if (forceUpdate) getString(R.string.app_name) else null
             ?: getString(R.string.app_name)
         val body = message.notification?.body
             ?: message.data["body"]
             ?: message.data["message"]
+            ?: if (forceUpdate) "Tap to check for the latest G700 Remote update." else null
             ?: return
-        showNotification(title, body)
+        showNotification(title, body, forceUpdate)
     }
 
-    private fun showNotification(title: String, body: String) {
+    private fun showNotification(title: String, body: String, forceUpdate: Boolean) {
         createChannel()
         val openIntent = PendingIntent.getActivity(
             this,
-            7005,
+            if (forceUpdate) 7006 else 7005,
             Intent(this, MainActivity::class.java).apply {
+                if (forceUpdate) {
+                    action = MainActivity.ACTION_FORCE_UPDATE_CHECK
+                    putExtra(MainActivity.EXTRA_FORCE_UPDATE, "1")
+                }
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
