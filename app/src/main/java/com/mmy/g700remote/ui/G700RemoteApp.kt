@@ -3327,32 +3327,43 @@ private fun VehicleLocationCard(
     val displayAddress = location?.let { humanReadableLocationAddress(it) }
     val darkMap = state.appColorMode == AppColorMode.Dark
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.End,
-        ) {
-            Text(
-                location?.let { formatLocationUpdatedText(it.updatedAtMillis, recent) } ?: tr("No location yet"),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.width(8.dp))
-            Box(
-                modifier = Modifier
-                    .size(9.dp)
-                    .border(
-                        width = 1.5.dp,
-                        color = if (recent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        shape = CircleShape,
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(9.dp)
+                            .border(
+                                width = 1.5.dp,
+                                color = if (recent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                shape = CircleShape,
+                            )
+                            .background(
+                                color = if (recent) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                shape = CircleShape,
+                            ),
                     )
-                    .background(
-                        color = if (recent) MaterialTheme.colorScheme.primary else Color.Transparent,
-                        shape = CircleShape,
-                    ),
-            )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        location?.let { formatLocationUpdatedText(it.updatedAtMillis, recent) } ?: tr("No location yet"),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                location?.let {
+                    Spacer(Modifier.width(10.dp))
+                    LocationSourcePill(it.source)
+                }
+            }
         }
         Surface(
             shape = RoundedCornerShape(26.dp),
@@ -3404,21 +3415,6 @@ private fun VehicleLocationCard(
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        location?.let {
-                            Spacer(Modifier.height(2.dp))
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                Text(
-                                    tr("Source"),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                )
-                                LocationSourcePill(it.source)
-                            }
-                        }
                     }
                     OutlinedButton(
                         onClick = {
