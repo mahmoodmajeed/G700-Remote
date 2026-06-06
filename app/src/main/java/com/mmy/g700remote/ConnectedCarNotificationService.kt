@@ -14,6 +14,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import com.mmy.g700remote.analytics.G700Analytics
 import com.mmy.g700remote.ble.RemoteConnectionState
 import com.mmy.g700remote.data.AppLanguage
 import com.mmy.g700remote.data.LockCommandProgress
@@ -36,6 +37,7 @@ class ConnectedCarNotificationService : Service() {
     private val settings by lazy { G700RemoteAppGraph.settings(applicationContext) }
     private var observerJob: Job? = null
     private var wakeStarted = false
+    private var foregroundStarted = false
 
     override fun onCreate() {
         super.onCreate()
@@ -43,10 +45,17 @@ class ConnectedCarNotificationService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
+        val action = intent?.action
+        val startedWithForegroundApi = action == ACTION_START || action == ACTION_START_FROM_BLE_WAKE
+        if (startedWithForegroundApi && !promoteToForeground(repository.uiState.value)) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        when (action) {
             ACTION_START,
             ACTION_START_FROM_BLE_WAKE -> {
-                wakeStarted = intent.action == ACTION_START_FROM_BLE_WAKE
+                wakeStarted = action == ACTION_START_FROM_BLE_WAKE
                 if (wakeStarted && repository.uiState.value.connectionState !is RemoteConnectionState.Ready) {
                     repository.connectSaved()
                 }
@@ -56,7 +65,7 @@ class ConnectedCarNotificationService : Service() {
             ACTION_HAZARDS_ON -> repository.send(RemoteCommand.Hazards(OnOffAction.On))
             ACTION_HAZARDS_OFF -> repository.send(RemoteCommand.Hazards(OnOffAction.Off))
             ACTION_STOP -> {
-                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopForegroundIfStarted()
                 stopSelf()
                 return START_NOT_STICKY
             }
@@ -65,12 +74,15 @@ class ConnectedCarNotificationService : Service() {
 
         val state = repository.uiState.value
         if (!shouldRun(state)) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopForegroundIfStarted()
             stopSelf()
             return START_NOT_STICKY
         }
 
-        startAsForeground(buildNotification(state))
+        if (!foregroundStarted && !promoteToForeground(state)) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         observeState()
         return START_STICKY
     }
@@ -79,7 +91,7 @@ class ConnectedCarNotificationService : Service() {
 
     override fun onDestroy() {
         observerJob?.cancel()
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopForegroundIfStarted()
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -94,7 +106,7 @@ class ConnectedCarNotificationService : Service() {
                             .notify(NOTIFICATION_ID, buildNotification(state))
                     }
                 } else {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopForegroundIfStarted()
                     stopSelf()
                 }
             }
@@ -118,6 +130,22 @@ class ConnectedCarNotificationService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+        foregroundStarted = true
+    }
+
+    private fun promoteToForeground(state: RemoteUiState): Boolean =
+        runCatching {
+            startAsForeground(buildNotification(state))
+            true
+        }.getOrElse { throwable ->
+            G700Analytics.nonFatal(throwable, "connected_notification_foreground_start")
+            false
+        }
+
+    private fun stopForegroundIfStarted() {
+        if (!foregroundStarted) return
+        runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+        foregroundStarted = false
     }
 
     private fun buildNotification(state: RemoteUiState): Notification {
