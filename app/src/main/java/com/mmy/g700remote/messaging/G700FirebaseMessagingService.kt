@@ -17,7 +17,7 @@ import com.mmy.g700remote.update.AppUpdateManager
 class G700FirebaseMessagingService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
         super.onNewToken(token)
-        G700Analytics.settingChanged("fcm_token_refreshed", "true")
+        G700Analytics.pushMessage("token_refreshed")
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
@@ -25,7 +25,7 @@ class G700FirebaseMessagingService : FirebaseMessagingService() {
         val forceUpdate = message.data["forceupdate"]?.trim() == "1"
         if (forceUpdate) {
             AppUpdateManager.markForceUpdateCheckPending(this)
-            G700Analytics.settingChanged("fcm_force_update", "received")
+            G700Analytics.pushMessage("force_update_received", forceUpdate = true)
         }
         val title = message.notification?.title
             ?: message.data["title"]

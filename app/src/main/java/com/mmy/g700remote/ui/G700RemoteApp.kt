@@ -1862,19 +1862,19 @@ private fun HomeControlDashboard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    if (ready) {
-                        if (lockActionIsUnlock) tr("Tap to unlock") else tr("Tap to lock")
-                    } else {
-                        tr("Connect to Control")
-                    },
-                    style = subtitleStyle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(if (compact) 8.dp else 10.dp))
+                if (ready) {
+                    Text(
+                        if (lockActionIsUnlock) tr("Tap to unlock") else tr("Tap to lock"),
+                        style = subtitleStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(if (compact) 8.dp else 10.dp))
+                } else {
+                    Spacer(Modifier.height(if (compact) 12.dp else 16.dp))
+                }
                 HeroCommandButton(
                     text = if (lockActionIsUnlock) tr("Unlock") else tr("Lock"),
                     icon = if (lockActionIsUnlock) Icons.Outlined.LockOpen else Icons.Outlined.Lock,
@@ -2616,28 +2616,28 @@ private fun SettingsScreen(
                 Spacer(Modifier.height(14.dp))
                 ProtocolSwitchRow(
                     title = tr("Bluetooth LE"),
-                    subtitle = tr("Best for close range and remote-key use."),
+                    subtitle = tr("Best for nearby remote control."),
                     checked = state.bleEnabled,
                     icon = Icons.Outlined.Bluetooth,
                     onCheckedChange = onBleEnabledChanged,
                 )
                 ProtocolSwitchRow(
                     title = tr("LAN / mDNS"),
-                    subtitle = tr("Uses CarKey on _carkey._tcp. port 9274 when the phone and head unit share a network."),
+                    subtitle = tr("Works when phone and car are on the same Wi-Fi."),
                     checked = state.lanEnabled,
                     icon = Icons.Outlined.Wifi,
                     onCheckedChange = onLanEnabledChanged,
                 )
                 ProtocolSwitchRow(
                     title = tr("Connected notification"),
-                    subtitle = tr("Keep a persistent notification with light status and quick actions while connected."),
+                    subtitle = tr("Shows quick controls while the car is connected."),
                     checked = state.connectedNotificationEnabled,
                     icon = Icons.Outlined.DirectionsCar,
                     onCheckedChange = onConnectedNotificationChanged,
                 )
                 ProtocolSwitchRow(
                     title = tr("Wake when nearby"),
-                    subtitle = tr("Android wakes the app when your paired DisplayMirror BLE device advertises nearby. No constant background scan is kept."),
+                    subtitle = tr("Wakes the app when the paired car is nearby."),
                     checked = state.bleWakeEnabled,
                     icon = Icons.Outlined.BluetoothSearching,
                     onCheckedChange = onBleWakeEnabledChanged,
@@ -2662,7 +2662,7 @@ private fun SettingsScreen(
                     )
                 }
                 Text(
-                    tr("Default uses DisplayMirror location when available. Phone location is only used while connected over BLE and permission is granted."),
+                    tr("Choose the car location source used on Home."),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -2673,6 +2673,30 @@ private fun SettingsScreen(
                     preference = state.connectionPreference,
                     onPreference = onConnectionPreferenceChanged,
                 )
+            }
+        }
+        item {
+            Section(tr("Pairing")) {
+                MetricRow(tr("Device"), state.pairedDevice?.name ?: tr("Unnamed"))
+                MetricRow(tr("Address"), state.pairedDevice?.address ?: tr("not paired"))
+                MetricRow(tr("Transport"), state.pairedDevice?.transport?.label() ?: tr("Unknown"))
+                Spacer(Modifier.height(10.dp))
+                PairingCodeField(
+                    value = state.pairingCode,
+                    onValueChange = {},
+                    readOnly = true,
+                    supportingText = tr("Clear pairing to restart first-time setup."),
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = { showClearPairingDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                ) {
+                    Icon(Icons.Outlined.Delete, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(tr("Forget paired car"))
+                }
             }
         }
         item {
@@ -2743,32 +2767,6 @@ private fun SettingsScreen(
             }
         }
         item {
-            Section(tr("Security")) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.weight(1f)) {
-                        Text(tr("Biometric or PIN gate"))
-                        Text(
-                            tr("Unlock, opening controls, and charge mode changes are gated."),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(checked = state.localAuthEnabled, onCheckedChange = onLocalAuthChanged)
-                }
-            }
-        }
-        item {
-            Section(tr("Additional regional features")) {
-                ProtocolSwitchRow(
-                    title = tr("Show unavailable regional features"),
-                    subtitle = tr("Adds steering heat, seat heating, and PM2.5 controls for cars that support them."),
-                    checked = state.regionalFeaturesEnabled,
-                    icon = Icons.Outlined.Settings,
-                    onCheckedChange = onRegionalFeaturesChanged,
-                )
-            }
-        }
-        item {
             Section(tr("App updates")) {
                 MetricRow(tr("Current version"), BuildConfig.VERSION_NAME)
                 updateState.lastCheckedMillis?.let {
@@ -2812,6 +2810,44 @@ private fun SettingsScreen(
         }
         item {
             Section(tr("Advanced")) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.weight(1f)) {
+                        Text(tr("Biometric or PIN gate"))
+                        Text(
+                            tr("Confirm sensitive controls with phone security."),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = state.localAuthEnabled, onCheckedChange = onLocalAuthChanged)
+                }
+                Spacer(Modifier.height(10.dp))
+                ProtocolSwitchRow(
+                    title = tr("Regional features"),
+                    subtitle = tr("Show extra controls for cars that support them."),
+                    checked = state.regionalFeaturesEnabled,
+                    icon = Icons.Outlined.Settings,
+                    onCheckedChange = onRegionalFeaturesChanged,
+                )
+                ProtocolSwitchRow(
+                    title = tr("Demo mode"),
+                    subtitle = tr("Try the app without sending commands to a car."),
+                    checked = state.demoMode,
+                    icon = Icons.Outlined.PlayArrow,
+                    onCheckedChange = onDemoModeChanged,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.weight(1f)) {
+                        Text(tr("Protocol logging"))
+                        Text(
+                            tr("Keep off unless troubleshooting."),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = state.loggingEnabled, onCheckedChange = onLoggingChanged)
+                }
+                Spacer(Modifier.height(10.dp))
                 OutlinedButton(
                     onClick = { advancedExpanded = !advancedExpanded },
                     modifier = Modifier.fillMaxWidth(),
@@ -2820,18 +2856,6 @@ private fun SettingsScreen(
                     Text(if (advancedExpanded) tr("Hide diagnostics") else tr("Show diagnostics"))
                 }
                 if (advancedExpanded) {
-                    Spacer(Modifier.height(10.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.weight(1f)) {
-                            Text(tr("Protocol logging"))
-                            Text(
-                                tr("Keep off unless troubleshooting."),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Switch(checked = state.loggingEnabled, onCheckedChange = onLoggingChanged)
-                    }
                     Spacer(Modifier.height(10.dp))
                     MetricRow(tr("Connection"), state.connectionState.label())
                     MetricRow(tr("Log entries"), state.protocolLog.size.toString())
@@ -2873,61 +2897,6 @@ private fun SettingsScreen(
                         Spacer(Modifier.width(8.dp))
                         Text(tr("Export redacted protocol log"))
                     }
-                }
-            }
-        }
-        item {
-            Section(tr("Demo mode")) {
-                Text(
-                    tr("Use this to test app functions when no car is connected. No commands are sent to the car."),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(10.dp))
-                if (state.demoMode) {
-                    Button(
-                        onClick = { onDemoModeChanged(false) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(22.dp),
-                    ) {
-                        Icon(Icons.Outlined.PowerSettingsNew, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(tr("Disable demo mode"))
-                    }
-                } else {
-                    OutlinedButton(
-                        onClick = { onDemoModeChanged(true) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(22.dp),
-                    ) {
-                        Icon(Icons.Outlined.PlayArrow, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(tr("Enable demo mode"))
-                    }
-                }
-            }
-        }
-        item {
-            Section(tr("Pairing")) {
-                MetricRow(tr("Device"), state.pairedDevice?.name ?: tr("Unnamed"))
-                MetricRow(tr("Address"), state.pairedDevice?.address ?: tr("not paired"))
-                MetricRow(tr("Transport"), state.pairedDevice?.transport?.label() ?: tr("Unknown"))
-                Spacer(Modifier.height(10.dp))
-                PairingCodeField(
-                    value = state.pairingCode,
-                    onValueChange = {},
-                    readOnly = true,
-                    supportingText = tr("Clear pairing to restart first-time setup."),
-                )
-                Spacer(Modifier.height(10.dp))
-                OutlinedButton(
-                    onClick = { showClearPairingDialog = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                ) {
-                    Icon(Icons.Outlined.Delete, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(tr("Forget paired car"))
                 }
             }
         }
@@ -3327,44 +3296,6 @@ private fun VehicleLocationCard(
     val displayAddress = location?.let { humanReadableLocationAddress(it) }
     val darkMap = state.appColorMode == AppColorMode.Dark
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(9.dp)
-                            .border(
-                                width = 1.5.dp,
-                                color = if (recent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                shape = CircleShape,
-                            )
-                            .background(
-                                color = if (recent) MaterialTheme.colorScheme.primary else Color.Transparent,
-                                shape = CircleShape,
-                            ),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        location?.let { formatLocationUpdatedText(it.updatedAtMillis, recent) } ?: tr("No location yet"),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                location?.let {
-                    Spacer(Modifier.width(10.dp))
-                    LocationSourcePill(it.source)
-                }
-            }
-        }
         Surface(
             shape = RoundedCornerShape(26.dp),
             color = MaterialTheme.colorScheme.surfaceContainer,
@@ -3396,6 +3327,14 @@ private fun VehicleLocationCard(
                     ) {
                         Icon(Icons.Outlined.OpenInFull, contentDescription = tr("Expand map"), modifier = Modifier.size(18.dp))
                     }
+                    location?.let {
+                        LocationSourceIconPill(
+                            source = it.source,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(8.dp),
+                        )
+                    }
                 }
                 Row(
                     modifier = Modifier
@@ -3415,6 +3354,34 @@ private fun VehicleLocationCard(
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
+                        Spacer(Modifier.height(3.dp))
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .border(
+                                            width = 1.4.dp,
+                                            color = if (recent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            shape = CircleShape,
+                                        )
+                                        .background(
+                                            color = if (recent) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                            shape = CircleShape,
+                                        ),
+                                )
+                                Spacer(Modifier.width(7.dp))
+                                Text(
+                                    location?.let { formatLocationUpdatedText(it.updatedAtMillis, recent) } ?: tr("No location yet"),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
                     }
                     OutlinedButton(
                         onClick = {
@@ -3469,6 +3436,34 @@ private fun LocationSourcePill(
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                 maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LocationSourceIconPill(
+    source: CarLocationSource,
+    modifier: Modifier = Modifier,
+) {
+    val icon = when (source) {
+        CarLocationSource.DisplayMirror -> Icons.Outlined.DirectionsCar
+        CarLocationSource.PhoneBle -> Icons.Outlined.PhoneAndroid
+    }
+    Surface(
+        modifier = modifier.size(34.dp),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.88f),
+        tonalElevation = 3.dp,
+        shadowElevation = 2.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                icon,
+                contentDescription = carLocationSourceLabel(source),
+                modifier = Modifier.size(17.dp),
+                tint = MaterialTheme.colorScheme.primary,
             )
         }
     }
@@ -5296,8 +5291,10 @@ private val ArabicTranslations = mapOf(
     "Forget paired car" to "نسيان السيارة المقترنة",
     "Clear pairing to restart first-time setup." to "امسح الاقتران لإعادة بدء الإعداد الأول.",
     "Bluetooth LE" to "بلوتوث LE",
+    "Best for nearby remote control." to "الأفضل للتحكم القريب.",
     "Best for close range and remote-key use." to "الأفضل للاستخدام القريب كمفتاح عن بعد.",
     "LAN / mDNS" to "الشبكة المحلية / mDNS",
+    "Works when phone and car are on the same Wi-Fi." to "يعمل عند اتصال الهاتف والسيارة بنفس شبكة Wi‑Fi.",
     "Uses CarKey on _carkey._tcp. port 9274 when the phone and head unit share a network." to "يستخدم CarKey على _carkey._tcp. والمنفذ 9274 عند اتصال الهاتف والشاشة بنفس الشبكة.",
     "Priority" to "الأولوية",
     "BLE first" to "البلوتوث أولاً",
@@ -5313,8 +5310,10 @@ private val ArabicTranslations = mapOf(
     "Today" to "اليوم",
     "Yesterday" to "أمس",
     "Connected notification" to "إشعار الاتصال",
+    "Shows quick controls while the car is connected." to "يعرض أزراراً سريعة أثناء اتصال السيارة.",
     "Keep a persistent notification with light status and quick actions while connected." to "يعرض إشعاراً مستمراً عند الاتصال مع حالة مختصرة وأزرار سريعة.",
     "Wake when nearby" to "الإيقاظ عند الاقتراب",
+    "Wakes the app when the paired car is nearby." to "يفتح التطبيق عند اقتراب السيارة المقترنة.",
     "Android wakes the app when your paired DisplayMirror BLE device advertises nearby. No constant background scan is kept." to "يسمح لأندرويد بإيقاظ التطبيق عند ظهور جهاز DisplayMirror المقترن قريباً عبر BLE بدون تشغيل فحص دائم في الخلفية.",
     "When enabled, Android registers BLE wake automatically after pairing. No companion setup button is required." to "عند تفعيله، يسجل أندرويد إيقاظ BLE تلقائياً بعد الاقتران. لا حاجة إلى زر إعداد إضافي.",
     "Set up companion wake" to "إعداد إيقاظ الجهاز المرافق",
@@ -5324,11 +5323,15 @@ private val ArabicTranslations = mapOf(
     "Companion setup finished. If Android did not confirm it, the BLE wake scan remains active." to "انتهى إعداد الجهاز المرافق. إذا لم يؤكد أندرويد الاقتران، سيبقى إيقاظ BLE فعالاً.",
     "Pair DisplayMirror before setting up companion wake." to "اقترن بـ DisplayMirror قبل إعداد إيقاظ الجهاز المرافق.",
     "Companion Device setup is not supported on this Android version." to "إعداد الجهاز المرافق غير مدعوم في هذا إصدار أندرويد.",
+    "Choose the car location source used on Home." to "اختر مصدر موقع السيارة في الشاشة الرئيسية.",
     "Security" to "الأمان",
+    "Regional features" to "الميزات الإقليمية",
+    "Show extra controls for cars that support them." to "يعرض عناصر تحكم إضافية للسيارات التي تدعمها.",
     "Additional regional features" to "ميزات إقليمية إضافية",
     "Show unavailable regional features" to "إظهار الميزات غير المتوفرة محلياً",
     "Adds steering heat, seat heating, and PM2.5 controls for cars that support them." to "يعرض تدفئة المقود وتدفئة المقاعد وفلتر PM2.5 للسيارات التي تدعمها.",
     "Biometric or PIN gate" to "حماية بالبصمة أو رمز الهاتف",
+    "Confirm sensitive controls with phone security." to "تأكيد الأوامر الحساسة بحماية الهاتف.",
     "Unlock, opening controls, and charge mode changes are gated." to "فتح القفل والتحكم بالفتحات وتغيير وضع الشحن تتطلب تأكيداً.",
     "This app controls the DisplayMirror head-unit protocol. It is not an OEM-certified digital key." to "هذا التطبيق يتحكم ببروتوكول DisplayMirror في الشاشة، وليس مفتاحاً رقمياً معتمداً من المصنع.",
     "Advanced" to "متقدم",
@@ -5336,6 +5339,7 @@ private val ArabicTranslations = mapOf(
     "Show diagnostics" to "عرض التشخيص",
     "Protocol logging" to "تسجيل البروتوكول",
     "Keep off unless troubleshooting." to "اتركه متوقفاً إلا عند التشخيص.",
+    "Try the app without sending commands to a car." to "جرّب التطبيق بدون إرسال أوامر للسيارة.",
     "Connection" to "الاتصال",
     "Log entries" to "سجلات",
     "Status" to "الحالة",

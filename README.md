@@ -2,13 +2,13 @@
 
 G700 Remote is a Kotlin Android companion app for Jetour G700 head units running the open-source DisplayMirror app. It connects to DisplayMirror's remote-access protocol over Bluetooth LE or LAN/mDNS and provides a focused phone remote for lock/unlock, climate, openings, lighting, charging, and vehicle telemetry that DisplayMirror exposes.
 
-This repository started from the v1.2 baseline and now tracks the v1.6.6 release. It is intended as the clean source baseline for future development, CI, Play Store preparation, and Codex-assisted changes.
+This repository started from the v1.2 baseline and now tracks the v1.6.7 release. It is intended as the clean source baseline for future development, CI, Play Store preparation, and Codex-assisted changes.
 
 ## Status
 
-- App version: `1.6.6`
+- App version: `1.6.7`
 - Android package: `com.mmy.g700remote`
-- `versionCode`: `28`
+- `versionCode`: `29`
 - Minimum Android: API 30
 - Target/compile SDK: API 36
 - UI: Jetpack Compose Material 3 with an expressive spring-motion surface system
@@ -47,7 +47,7 @@ For implementation details, see [docs/DISPLAYMIRROR_COMPATIBILITY.md](docs/DISPL
 
 - First-time setup with pairing-code entry, a link to DisplayMirror, and a demo mode for review/testing without a paired car.
 - Material 3 Expressive-inspired UI with responsive spring press motion, larger tactile surfaces, and a Jetour-branded header.
-- v1.6.6 is a silent bug-fix build on top of v1.6.3 with the same user-facing release notes.
+- v1.6.7 is a silent bug-fix build on top of v1.6.3 with the same user-facing release notes.
 - v1.6.3 keeps the Home redesign and interactive vehicle location map, adds cleaner map gestures, current-phone-location context, source chips, smoother map transitions, GT icon optical alignment, Firebase-triggered update checks, and safer local-only Google configuration.
 - v1.6.2 adds dark-mode map styling, a cleaner expanded map with open/navigate/copy actions, better address cleanup, pull-to-refresh refinements, and safer local-only Google configuration.
 - v1.6.1 preserves the v1.6.0 release-note content and fixes a startup crash caused by creating a Google Maps bitmap marker before Maps initialized.

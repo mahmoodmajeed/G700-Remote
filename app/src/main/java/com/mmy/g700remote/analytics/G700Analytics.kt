@@ -29,7 +29,7 @@ object G700Analytics {
             FirebaseAnalytics.Event.SCREEN_VIEW,
             mapOf(
                 FirebaseAnalytics.Param.SCREEN_NAME to name.safeParam(),
-                FirebaseAnalytics.Param.SCREEN_CLASS to "Compose",
+                FirebaseAnalytics.Param.SCREEN_CLASS to "G700RemoteApp",
             ),
         )
     }
@@ -91,6 +91,16 @@ object G700Analytics {
 
     fun mapOpened(source: String) {
         log("map_opened", mapOf("source" to source.safeParam()))
+    }
+
+    fun pushMessage(action: String, forceUpdate: Boolean = false) {
+        log(
+            "push_message",
+            mapOf(
+                "action" to action.safeParam(),
+                "force_update" to forceUpdate,
+            ),
+        )
     }
 
     fun nonFatal(throwable: Throwable, area: String) {
