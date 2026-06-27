@@ -330,6 +330,11 @@ fun G700RemoteApp(
     var showReleaseNotes by rememberSaveable { mutableStateOf(false) }
     var skipAccount by rememberSaveable { mutableStateOf(false) }
     var showQrScanner by rememberSaveable { mutableStateOf(false) }
+    var showLogin by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(state.isSignedIn) {
+        if (state.isSignedIn) showLogin = false
+    }
 
     fun showUserNotice(message: String) {
         scope.launch { snackbarHostState.showSnackbar(translate(language, message)) }
@@ -616,11 +621,14 @@ fun G700RemoteApp(
                 onUserNotice = ::showUserNotice,
                 modifier = Modifier.padding(padding),
             )
-        } else if (state.cloudEnabled && !state.isSignedIn && !skipAccount && !demoMode && state.pairedDevice == null) {
+        } else if (showLogin || (state.cloudEnabled && !state.isSignedIn && !skipAccount && !demoMode && state.pairedDevice == null)) {
             LoginScreen(
                 state = state,
                 onLogin = { email, password -> viewModel.login(email, password) },
-                onUseWithoutAccount = { skipAccount = true },
+                onUseWithoutAccount = {
+                    skipAccount = true
+                    showLogin = false
+                },
                 modifier = Modifier.padding(padding),
             )
         } else if (showStandaloneHistory && !demoMode && state.pairedDevice == null) {
@@ -671,6 +679,7 @@ fun G700RemoteApp(
                 onUserNotice = ::showUserNotice,
                 onClearSentinelAlerts = {},
                 onSignOut = {},
+                onSignIn = {},
                 onCloudEnabledChanged = {},
                 onRescanQr = {},
                 showUpdates = showUpdates,
@@ -742,6 +751,7 @@ fun G700RemoteApp(
                 onUserNotice = ::showUserNotice,
                 onClearSentinelAlerts = viewModel::clearSentinelAlerts,
                 onSignOut = viewModel::signOut,
+                onSignIn = { showLogin = true },
                 onCloudEnabledChanged = viewModel::setCloudEnabled,
                 onRescanQr = { showQrScanner = true },
                 showUpdates = showUpdates,
@@ -1260,6 +1270,7 @@ private fun MainRemoteScaffold(
     onUserNotice: (String) -> Unit,
     onClearSentinelAlerts: () -> Unit,
     onSignOut: () -> Unit,
+    onSignIn: () -> Unit,
     onCloudEnabledChanged: (Boolean) -> Unit,
     onRescanQr: () -> Unit,
     showUpdates: Boolean,
@@ -1363,6 +1374,7 @@ private fun MainRemoteScaffold(
                     onDisconnect = onDisconnect,
                     onDemoModeChanged = onDemoModeChanged,
                     onSignOut = onSignOut,
+                    onSignIn = onSignIn,
                     onRescanQr = onRescanQr,
                     onCloudEnabledChanged = onCloudEnabledChanged,
                     modifier = screenModifier,
@@ -2353,7 +2365,6 @@ private fun ControlsScreen(
     modifier: Modifier = Modifier,
 ) {
     val ready = state.connectionState is RemoteConnectionState.Ready
-    val airOn = state.telemetry.fanSpeed?.let { it > 0 }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -2361,67 +2372,6 @@ private fun ControlsScreen(
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
-        CompactSection(tr("Climate")) {
-            ModeToggleGrid(
-                toggles = listOf(
-                    ToggleSpec(
-                        label = tr("HVAC"),
-                        icon = Icons.Outlined.AcUnit,
-                        checked = airOn,
-                        onOn = { onCommand(RemoteCommand.Climate(ClimateAction.HvacOn)) },
-                        onOff = { onCommand(RemoteCommand.Climate(ClimateAction.HvacOff)) },
-                    ),
-                    ToggleSpec(
-                        label = tr("A/C"),
-                        icon = Icons.Outlined.AcUnit,
-                        checked = state.telemetry.acOn,
-                        onOn = { onCommand(RemoteCommand.Climate(ClimateAction.AcOn)) },
-                        onOff = { onCommand(RemoteCommand.Climate(ClimateAction.AcOff)) },
-                    ),
-                ),
-                enabled = ready,
-                columns = 2,
-            )
-        }
-        CompactSection(tr("Lighting")) {
-            ModeToggleGrid(
-                toggles = listOf(
-                    ToggleSpec(
-                        label = tr("Hazards"),
-                        icon = Icons.Outlined.Warning,
-                        checked = state.telemetry.hazardsOn,
-                        onOn = { onCommand(RemoteCommand.Hazards(OnOffAction.On)) },
-                        onOff = { onCommand(RemoteCommand.Hazards(OnOffAction.Off)) },
-                    ),
-                    ToggleSpec(
-                        label = tr("Daytime Running Lights"),
-                        icon = Icons.Outlined.Lightbulb,
-                        checked = state.telemetry.drlOn,
-                        onOn = { onCommand(RemoteCommand.Drl(OnOffAction.On)) },
-                        onOff = { onCommand(RemoteCommand.Drl(OnOffAction.Off)) },
-                    ),
-                ),
-                enabled = ready,
-                columns = 2,
-            )
-        }
-        CompactSection(tr("Scenes")) {
-            ActionBoxGrid(
-                actions = listOf(
-                    ActionSpec(tr("Cinema"), Icons.Outlined.Movie) { onCommand(RemoteCommand.Scene(SceneKind.Cinema)) },
-                    ActionSpec(tr("Big Bed"), Icons.Outlined.Hotel) { onCommand(RemoteCommand.Scene(SceneKind.BigBed)) },
-                    ActionSpec(tr("Pet Mode"), Icons.Outlined.Pets) { onCommand(RemoteCommand.Scene(SceneKind.Pet)) },
-                    ActionSpec(tr("Resting"), Icons.Outlined.Bedtime) { onCommand(RemoteCommand.Scene(SceneKind.Resting)) },
-                    ActionSpec(tr("Romance"), Icons.Outlined.Favorite) { onCommand(RemoteCommand.Scene(SceneKind.Romance)) },
-                    ActionSpec(tr("Light Show"), Icons.Outlined.Lightbulb) { onCommand(RemoteCommand.Scene(SceneKind.LightShow)) },
-                    ActionSpec(tr("Car Wash"), Icons.Outlined.LocalCarWash) { onCommand(RemoteCommand.Scene(SceneKind.CarWash)) },
-                    ActionSpec(tr("Rescue"), Icons.Outlined.Shield) { onCommand(RemoteCommand.Scene(SceneKind.Rescue)) },
-                ),
-                enabled = ready,
-                columns = 2,
-                itemHeight = 48.dp,
-            )
-        }
         CompactSection(tr("Windows")) {
             ActionBoxGrid(
                 actions = listOf(
@@ -2485,6 +2435,45 @@ private fun ControlsScreen(
                     },
                 ),
                 enabled = ready,
+                itemHeight = 48.dp,
+            )
+        }
+        CompactSection(tr("Lighting")) {
+            ModeToggleGrid(
+                toggles = listOf(
+                    ToggleSpec(
+                        label = tr("Hazards"),
+                        icon = Icons.Outlined.Warning,
+                        checked = state.telemetry.hazardsOn,
+                        onOn = { onCommand(RemoteCommand.Hazards(OnOffAction.On)) },
+                        onOff = { onCommand(RemoteCommand.Hazards(OnOffAction.Off)) },
+                    ),
+                    ToggleSpec(
+                        label = tr("Daytime Running Lights"),
+                        icon = Icons.Outlined.Lightbulb,
+                        checked = state.telemetry.drlOn,
+                        onOn = { onCommand(RemoteCommand.Drl(OnOffAction.On)) },
+                        onOff = { onCommand(RemoteCommand.Drl(OnOffAction.Off)) },
+                    ),
+                ),
+                enabled = ready,
+                columns = 2,
+            )
+        }
+        CompactSection(tr("Scenes")) {
+            ActionBoxGrid(
+                actions = listOf(
+                    ActionSpec(tr("Cinema"), Icons.Outlined.Movie) { onCommand(RemoteCommand.Scene(SceneKind.Cinema)) },
+                    ActionSpec(tr("Big Bed"), Icons.Outlined.Hotel) { onCommand(RemoteCommand.Scene(SceneKind.BigBed)) },
+                    ActionSpec(tr("Pet Mode"), Icons.Outlined.Pets) { onCommand(RemoteCommand.Scene(SceneKind.Pet)) },
+                    ActionSpec(tr("Resting"), Icons.Outlined.Bedtime) { onCommand(RemoteCommand.Scene(SceneKind.Resting)) },
+                    ActionSpec(tr("Romance"), Icons.Outlined.Favorite) { onCommand(RemoteCommand.Scene(SceneKind.Romance)) },
+                    ActionSpec(tr("Light Show"), Icons.Outlined.Lightbulb) { onCommand(RemoteCommand.Scene(SceneKind.LightShow)) },
+                    ActionSpec(tr("Car Wash"), Icons.Outlined.LocalCarWash) { onCommand(RemoteCommand.Scene(SceneKind.CarWash)) },
+                    ActionSpec(tr("Rescue"), Icons.Outlined.Shield) { onCommand(RemoteCommand.Scene(SceneKind.Rescue)) },
+                ),
+                enabled = ready,
+                columns = 2,
                 itemHeight = 48.dp,
             )
         }
@@ -2629,7 +2618,7 @@ private fun CameraScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
-            Section(tr("Car camera")) {
+            Section(tr("Cameras")) {
                 if (cam.cameraIds.isEmpty()) {
                     Text(
                         if (ready) tr("No cameras reported by the car yet.")
@@ -2648,7 +2637,21 @@ private fun CameraScreen(
                         cam.cameraIds.forEachIndexed { index, id ->
                             FilterChip(
                                 selected = id == selectedCamera,
-                                onClick = { selectedCamera = id },
+                                onClick = {
+                                    selectedCamera = id
+                                    if (ready) {
+                                        if (cam.liveViewActive) {
+                                            onCommand(RemoteCommand.LiveView(StartStopAction.Start, id))
+                                        } else {
+                                            onCommand(
+                                                RemoteCommand.Snapshot(
+                                                    camera = id,
+                                                    requestId = "snap-${System.currentTimeMillis()}",
+                                                ),
+                                            )
+                                        }
+                                    }
+                                },
                                 label = { Text("${tr("Camera")} ${index + 1}") },
                             )
                         }
@@ -3216,6 +3219,7 @@ private fun SettingsScreen(
     onDisconnect: () -> Unit,
     onDemoModeChanged: (Boolean) -> Unit,
     onSignOut: () -> Unit,
+    onSignIn: () -> Unit,
     onRescanQr: () -> Unit,
     onCloudEnabledChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
@@ -3312,17 +3316,32 @@ private fun SettingsScreen(
                     onCheckedChange = onCloudEnabledChanged,
                 )
                 Spacer(Modifier.height(10.dp))
-                OutlinedButton(
-                    onClick = onRescanQr,
-                    enabled = state.isSignedIn,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(22.dp),
-                ) {
-                    Icon(Icons.Outlined.QrCodeScanner, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (state.boundCar != null) tr("Re-scan car QR code") else tr("Scan car QR code"))
-                }
-                if (state.isSignedIn) {
+                if (!state.isSignedIn) {
+                    Button(
+                        onClick = onSignIn,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(22.dp),
+                    ) {
+                        Icon(Icons.Outlined.AccountCircle, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(tr("Sign in"))
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        tr("Sign in to enable cloud control, QR pairing, and preference sync. Create the account on your car's DisplayMirror screen."),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    OutlinedButton(
+                        onClick = onRescanQr,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(22.dp),
+                    ) {
+                        Icon(Icons.Outlined.QrCodeScanner, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (state.boundCar != null) tr("Re-scan car QR code") else tr("Scan car QR code"))
+                    }
                     Spacer(Modifier.height(8.dp))
                     OutlinedButton(
                         onClick = { showSignOutDialog = true },
@@ -5525,7 +5544,7 @@ private enum class AppTab(val label: String, val icon: ImageVector, val showInBo
     Home("Home", Icons.Outlined.DirectionsCar),
     Climate("Climate", Icons.Outlined.Thermostat),
     Controls("Controls", Icons.Outlined.Tune),
-    Camera("Camera", Icons.Outlined.Videocam),
+    Camera("Cameras", Icons.Outlined.Videocam),
     Charging("Charge", Icons.Outlined.Bolt),
     NavigationHistory("Links", Icons.Outlined.Link, showInBottomBar = false),
     VehicleMap("Vehicle map", Icons.Outlined.DirectionsCar, showInBottomBar = false),
@@ -5624,13 +5643,14 @@ private fun isLocked(state: RemoteUiState): Boolean? =
 private fun requestCabinAirToggle(
     state: RemoteUiState,
     onCommand: (RemoteCommand) -> Unit,
-    onUserNotice: (String) -> Unit,
+    @Suppress("UNUSED_PARAMETER") onUserNotice: (String) -> Unit,
 ) {
+    // DisplayMirror 3.x exposes whole-HVAC on/off, so this toggles both ways.
     val fanSpeed = state.telemetry.fanSpeed
     if (fanSpeed == null || fanSpeed <= 0) {
-        onCommand(RemoteCommand.Climate(ClimateAction.SetFanSpeed, numericValue = AIRCON_START_FAN_SPEED))
+        onCommand(RemoteCommand.Climate(ClimateAction.HvacOn))
     } else {
-        onUserNotice("Turning off air conditioning is not supported remotely. Please turn it off from the car.")
+        onCommand(RemoteCommand.Climate(ClimateAction.HvacOff))
     }
 }
 
@@ -5772,6 +5792,8 @@ private fun applyDemoCommand(telemetry: VehicleTelemetry, command: RemoteCommand
         is RemoteCommand.Climate -> when (command.action) {
             ClimateAction.AcOn -> telemetry.copy(acOn = true)
             ClimateAction.AcOff -> telemetry.copy(acOn = false)
+            ClimateAction.HvacOn -> telemetry.copy(fanSpeed = (telemetry.fanSpeed ?: 0).coerceAtLeast(AIRCON_START_FAN_SPEED))
+            ClimateAction.HvacOff -> telemetry.copy(fanSpeed = 0, acOn = false)
             ClimateAction.SetTempLeft -> telemetry.copy(tempLeft = command.numericValue?.toDouble() ?: telemetry.tempLeft)
             ClimateAction.SetTempRight -> telemetry.copy(tempRight = command.numericValue?.toDouble() ?: telemetry.tempRight)
             ClimateAction.SetFanSpeed -> telemetry.copy(fanSpeed = command.numericValue?.toInt()?.coerceIn(0, 10) ?: telemetry.fanSpeed)

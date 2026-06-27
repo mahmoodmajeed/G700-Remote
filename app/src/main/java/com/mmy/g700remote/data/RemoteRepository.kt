@@ -978,6 +978,16 @@ class RemoteRepository private constructor(
                     ClimateAction.AcOff -> _uiState.update { state ->
                         state.copy(telemetry = state.telemetry.copy(acOn = false))
                     }.also { persistSnapshot() }
+                    ClimateAction.HvacOn -> _uiState.update { state ->
+                        state.copy(
+                            telemetry = state.telemetry.copy(
+                                fanSpeed = (state.telemetry.fanSpeed ?: 0).coerceAtLeast(3),
+                            ),
+                        )
+                    }.also { persistSnapshot() }
+                    ClimateAction.HvacOff -> _uiState.update { state ->
+                        state.copy(telemetry = state.telemetry.copy(fanSpeed = 0, acOn = false))
+                    }.also { persistSnapshot() }
                     ClimateAction.SetTempLeft -> command.numericValue?.toDouble()?.let { value ->
                         _uiState.update { state ->
                             state.copy(telemetry = state.telemetry.copy(tempLeft = value))
