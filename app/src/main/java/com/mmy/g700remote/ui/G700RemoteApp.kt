@@ -2552,6 +2552,24 @@ private fun CameraScreen(
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
+        if (ready && activeTransport == TransportKind.Ble) {
+            item {
+                Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(Icons.Outlined.Wifi, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                        Text(
+                            tr("Cameras need Wi-Fi or cloud. Bluetooth can't stream video — connect to the car's Wi-Fi (LAN first in Settings) to view cameras."),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                    }
+                }
+            }
+        }
         item {
             Section(tr("Cameras")) {
                 if (cam.cameraIds.isEmpty()) {
@@ -4884,6 +4902,10 @@ private fun PreferenceSelector(
             PreferenceButton(ConnectionPreference.BleOnly, preference, tr("BLE only"), Modifier.weight(1f), onPreference)
             PreferenceButton(ConnectionPreference.LanOnly, preference, tr("LAN only"), Modifier.weight(1f), onPreference)
         }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            PreferenceButton(ConnectionPreference.CloudFirst, preference, tr("Cloud first"), Modifier.weight(1f), onPreference)
+            PreferenceButton(ConnectionPreference.CloudOnly, preference, tr("Cloud only"), Modifier.weight(1f), onPreference)
+        }
     }
 }
 
@@ -5764,8 +5786,10 @@ private fun releaseNotes(language: AppLanguage): ReleaseNotesCopy =
     if (language == AppLanguage.Arabic) {
         ReleaseNotesCopy(
             title = "ما الجديد في الإصدار ${BuildConfig.VERSION_NAME}",
-            intro = "تحسينات ثبات البلوتوث وتقليل الأخطاء على الشاشة.",
+            intro = "إرشادات الكاميرا/الـWi-Fi وخيارات الاتصال السحابي مع ثبات البلوتوث.",
             items = listOf(
+                "تبويب الكاميرات يوضّح الآن أن الكاميرات تحتاج Wi-Fi أو السحابة (البلوتوث لا ينقل الفيديو).",
+                "إضافة خياري \"السحابة أولاً\" و\"السحابة فقط\" للاتصال إلى جانب البلوتوث والشبكة المحلية.",
                 "تقليل ضغط البلوتوث: تحديث أبطأ وأخف للحفاظ على ثبات الاتصال مع وحدة السيارة.",
                 "أولوية اتصال أعلى للبلوتوث وإعادة محاولة اكتشاف الخدمة لتقليل الانقطاعات.",
                 "عدم إظهار أخطاء الإطارات الجزئية المؤقتة كرسائل مزعجة على الشاشة.",
@@ -5786,8 +5810,10 @@ private fun releaseNotes(language: AppLanguage): ReleaseNotesCopy =
     } else {
         ReleaseNotesCopy(
             title = "What's new in ${BuildConfig.VERSION_NAME}",
-            intro = "More Bluetooth stability and fewer on-screen errors.",
+            intro = "Camera/Wi-Fi guidance and cloud connection options, plus Bluetooth stability.",
             items = listOf(
+                "Cameras tab now explains that cameras need Wi-Fi or cloud (Bluetooth can't stream video).",
+                "Settings adds Cloud-first / Cloud-only connection options alongside BLE and LAN.",
                 "Lighter Bluetooth load: slower, smaller status refresh to keep the link stable with the head unit.",
                 "Higher BLE connection priority and service-discovery retry to reduce dropouts.",
                 "Stopped showing transient partial-frame errors (like the cabin-cooling parse error) as pop-ups.",
@@ -5824,6 +5850,9 @@ private val ArabicTranslations = mapOf(
     "Cinema" to "السينما",
     "Cloud" to "السحابة",
     "Cloud control" to "التحكم السحابي",
+    "Cloud first" to "السحابة أولاً",
+    "Cloud only" to "السحابة فقط",
+    "Cameras need Wi-Fi or cloud. Bluetooth can't stream video — connect to the car's Wi-Fi (LAN first in Settings) to view cameras." to "تحتاج الكاميرات إلى Wi-Fi أو السحابة. البلوتوث لا ينقل الفيديو — اتصل بشبكة Wi-Fi الخاصة بالسيارة (اختر LAN أولاً في الإعدادات) لعرض الكاميرات.",
     "Connect to your car to view cameras." to "اتصل بسيارتك لعرض الكاميرات.",
     "Connect your car" to "اربط سيارتك",
     "Control your car from anywhere over the DisplayMirror cloud." to "تحكم بسيارتك من أي مكان عبر سحابة DisplayMirror.",
