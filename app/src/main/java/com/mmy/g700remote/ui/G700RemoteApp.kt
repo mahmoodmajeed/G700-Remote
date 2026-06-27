@@ -607,6 +607,10 @@ fun G700RemoteApp(
             )
         },
     ) { padding ->
+        // Existing users who paired before QR pairing stored the relay token (or paired on an old
+        // version) are sent back through the setup screen to re-scan, so we never run on a stale
+        // pairing that can't reach the car or the cloud relay.
+        val needsRescan = state.pairedDevice != null && (state.boundCar?.pairToken).isNullOrBlank()
         if (updateState.isUseBlocked) {
             UpdateGateScreen(
                 updateState = updateState,
@@ -688,11 +692,12 @@ fun G700RemoteApp(
                 onRequestedTabConsumed = { requestedTab = null },
                 contentPadding = padding,
             )
-        } else if (state.pairedDevice == null) {
+        } else if (state.pairedDevice == null || needsRescan) {
             PairingScreen(
                 state = state,
                 onScanQr = { showQrScanner = true },
                 onStartDemo = { demoMode = true },
+                forcedRescan = needsRescan,
                 modifier = Modifier.padding(padding),
             )
         } else if (!permissionsGranted) {
@@ -1013,6 +1018,7 @@ private fun PairingScreen(
     state: RemoteUiState,
     onScanQr: () -> Unit,
     onStartDemo: () -> Unit,
+    forcedRescan: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val uriHandler = LocalUriHandler.current
@@ -1021,6 +1027,27 @@ private fun PairingScreen(
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        if (forcedRescan) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(Icons.Outlined.QrCodeScanner, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text(
+                            tr("Pairing has been upgraded. Please re-scan your car's QR code once to finish updating."),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
+                }
+            }
+        }
         item {
             Text(tr("Connect your car"), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(8.dp))
@@ -5734,8 +5761,9 @@ private fun releaseNotes(language: AppLanguage): ReleaseNotesCopy =
     if (language == AppLanguage.Arabic) {
         ReleaseNotesCopy(
             title = "ما الجديد في الإصدار ${BuildConfig.VERSION_NAME}",
-            intro = "إعداد أبسط بالكامل عبر رمز QR مع حساب DisplayMirror السحابي والكاميرات.",
+            intro = "إعداد أبسط عبر رمز QR، مع تفعيل التحكم السحابي عن بُعد.",
             items = listOf(
+                "التحكم السحابي عن بُعد أصبح يعمل: يتصل التطبيق بسيارتك من أي مكان عبر رمز الإقران.",
                 "إعداد جديد: سجّل الدخول ثم امسح رمز QR من شاشة السيارة — دون بحث بلوتوث أو إدخال رمز يدوي.",
                 "ربط السيارة بحسابك السحابي تلقائياً عند مسح الرمز، مع تحكم محلي عبر البلوتوث وWi-Fi.",
                 "تحسين الاتصال: اكتشاف البلوتوث تلقائياً والاتصال بأقرب سيارة دون عنوان يدوي.",
@@ -5749,8 +5777,9 @@ private fun releaseNotes(language: AppLanguage): ReleaseNotesCopy =
     } else {
         ReleaseNotesCopy(
             title = "What's new in ${BuildConfig.VERSION_NAME}",
-            intro = "A simpler, fully QR-based setup with DisplayMirror cloud accounts and cameras.",
+            intro = "A simpler QR-based setup, now with working remote cloud control.",
             items = listOf(
+                "Remote cloud control now works: reach your car from anywhere using the pairing QR.",
                 "New setup: sign in, then scan the QR code on the car screen — no Bluetooth search or manual code entry.",
                 "Scanning binds the car to your cloud account automatically, with local control over Bluetooth and Wi-Fi.",
                 "Connection fix: Bluetooth now auto-discovers and connects to the nearest car without a manual address.",
@@ -5800,6 +5829,7 @@ private val ArabicTranslations = mapOf(
     "No cameras reported by the car yet." to "لم تُبلّغ السيارة عن أي كاميرات بعد.",
     "No cloud car linked" to "لا توجد سيارة سحابية مرتبطة",
     "Not signed in" to "لم يتم تسجيل الدخول",
+    "Pairing has been upgraded. Please re-scan your car's QR code once to finish updating." to "تم تحديث آلية الاقتران. يرجى إعادة مسح رمز QR لسيارتك مرة واحدة لإكمال التحديث.",
     "On the car's DisplayMirror screen, create your account and sign in. Use the same account in this app." to "على شاشة DisplayMirror في السيارة، أنشئ حسابك وسجّل الدخول. استخدم نفس الحساب في هذا التطبيق.",
     "Password" to "كلمة المرور",
     "Pet Mode" to "وضع الحيوان الأليف",

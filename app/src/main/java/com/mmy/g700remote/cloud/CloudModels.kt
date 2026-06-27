@@ -20,6 +20,8 @@ data class BoundCar(
     val apiBase: String,
     val relayBase: String,
     val pairingCode: String,
+    /** QR `pair` token — the phone's relay credential (X-Auth-Token on /ws/car). Verified live. */
+    val pairToken: String = "",
     val name: String? = null,
     val boundAtMillis: Long = System.currentTimeMillis(),
 )
@@ -38,6 +40,7 @@ data class QrPairingPayload(
         apiBase = apiBase.ifBlank { CloudConfig.DEFAULT_API_BASE },
         relayBase = relayBase.ifBlank { CloudConfig.DEFAULT_RELAY_BASE },
         pairingCode = pairingCode,
+        pairToken = pairToken,
         name = name,
     )
 

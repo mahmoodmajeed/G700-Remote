@@ -74,8 +74,7 @@ class CompositeDisplayMirrorTransport(
 
     private fun isCloudAvailable(): Boolean =
         settings.isCloudEnabled() &&
-            settings.getCloudAccount() != null &&
-            settings.getBoundCar() != null
+            settings.getBoundCar()?.pairToken?.isNotBlank() == true
 
     override fun scanForDevices(): Flow<ScannedDevice> = callbackFlow {
         _connectionState.value = RemoteConnectionState.Scanning

@@ -37,7 +37,6 @@ import java.util.concurrent.TimeUnit
  */
 class CloudRelayClient(
     private val scope: CoroutineScope,
-    private val accountProvider: () -> CloudAccount?,
     private val boundCarProvider: () -> BoundCar?,
     private val pairingCodeProvider: () -> String?,
     private val httpClient: OkHttpClient = defaultClient(),
@@ -61,13 +60,8 @@ class CloudRelayClient(
         manualDisconnect = false
         closeSocketOnly()
 
-        val account = accountProvider()
         val car = boundCarProvider()
-        if (account == null) {
-            _connectionState.value = RemoteConnectionState.Error("Sign in to use cloud control")
-            return
-        }
-        if (car == null) {
+        if (car == null || car.pairToken.isBlank()) {
             _connectionState.value = RemoteConnectionState.Error("Scan your car's QR code to use cloud control")
             return
         }
@@ -76,15 +70,12 @@ class CloudRelayClient(
         _connectionState.value = RemoteConnectionState.Connecting("cloud:${car.carId}")
 
         val opened = CompletableDeferred<Boolean>()
-        // Relay phone-leg auth is enforced by an opaque edge worker (see CloudConfig). We send the
-        // account JWT under several header names plus the car id; this is best-effort and may need
-        // calibration against an online car. Local transports remain the reliable path.
+        // Verified relay phone-leg: connect to /ws/car with X-Car-Id + X-Auth-Token = the QR pair
+        // token. The relay bridges this to the real car. No account needed (see CloudConfig).
         val request = Request.Builder()
             .url(toWebSocketUrl(url))
-            .header(CloudConfig.HEADER_AUTH, CloudConfig.bearer(account.token))
-            .header(CloudConfig.HEADER_AUTH_TOKEN, account.token)
             .header(CloudConfig.HEADER_CAR_ID, car.carId)
-            .header(CloudConfig.HEADER_FLEET_KEY, CloudConfig.FLEET_KEY)
+            .header(CloudConfig.HEADER_AUTH_TOKEN, car.pairToken)
             .build()
 
         val listener = object : WebSocketListener() {

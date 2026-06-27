@@ -123,16 +123,19 @@ Tested with a real account + a real car QR. Confirmed:
   adopted; before adoption it returns `403 {"error":"not your car"}`. `push-settings` mirrors it.
 - **Owned cars** `GET /api/collections/cars/records` + Bearer → the account's cars
   (`{car_id, name, online, owner, last_seen}`).
-- **Relay phone leg** `wss://car.wowbooking.one/ws/phone` exists (returns 401, not 404) but its
-  WebSocket auth is enforced by an opaque edge worker. JWT (Bearer / X-Auth-Token / query),
-  the `pair` token, and cookies all returned 401, and the car was offline so end-to-end could not
-  be exercised. `POST /api/relay-auth` exists but is an internal validator (ignores client auth).
+- **Relay phone leg — VERIFIED.** The phone connects to the **same `/ws/car`** endpoint as the car,
+  with `X-Car-Id: <carId>` + `X-Auth-Token: <QR pair token>` → **101 Switching Protocols**. The
+  binding is checked (JWT / garbage / wrong-car / `/ws/phone` all 401), and **no account is
+  required** — the `pair` token alone authorizes the phone. The relay then bridges this connection
+  to the real car (authed with its secret `carToken`) and forwards the phone's `open/msg/close`
+  envelopes (`{t,sid,d}`) to it. End-to-end data flow couldn't be exercised only because the test
+  car was offline. (`POST /api/relay-auth` is an internal validator the worker uses; not client-facing.)
 
 ### Assumptions / open items
-- **Relay phone-leg auth is unverified.** We send `X-Car-Id` + `X-Auth-Token`(jwt) + Bearer + fleetKey
-  as a best guess. Cloud *remote* control needs one calibration pass with an **online** car. All of
-  it is centralized in `cloud/CloudConfig.kt` + `cloud/CloudRelayClient.kt`. This never blocks local
-  control.
+- **Relay auth is verified; end-to-end bridging is not** (test car was offline). The pair token must
+  remain valid for the relay (it stayed valid after `adopt-car`); if it ever expires, re-scan the QR.
+  All relay specifics are centralized in `cloud/CloudConfig.kt` + `cloud/CloudRelayClient.kt`. Cloud
+  never blocks local control.
 - **Cloud requires account approval** (`verified`/activation). Until approved, REST cloud ops return
   403; we surface a clear "account not activated yet" message and fall back to local control.
 - **Local control is the reliable path:** QR provides the pairing `code`; the app then auto-discovers

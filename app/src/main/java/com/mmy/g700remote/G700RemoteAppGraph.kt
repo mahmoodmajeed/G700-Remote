@@ -65,7 +65,6 @@ object G700RemoteAppGraph {
                 ),
                 cloud = CloudRelayClient(
                     scope = appScope,
-                    accountProvider = { settings.getCloudAccount() },
                     boundCarProvider = { settings.getBoundCar() },
                     pairingCodeProvider = {
                         settings.getBoundCar()?.pairingCode?.ifBlank { null } ?: settings.getPairingCode()

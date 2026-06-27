@@ -88,6 +88,7 @@ class SecureSettingsStore(context: Context) : SettingsStore {
                 apiBase = obj.optString("apiBase"),
                 relayBase = obj.optString("relayBase"),
                 pairingCode = obj.optString("pairingCode"),
+                pairToken = obj.optString("pairToken"),
                 name = obj.optString("name").ifBlank { null },
                 boundAtMillis = obj.optLong("boundAtMillis").takeIf { it > 0L } ?: System.currentTimeMillis(),
             )
@@ -100,6 +101,7 @@ class SecureSettingsStore(context: Context) : SettingsStore {
             .put("apiBase", car.apiBase)
             .put("relayBase", car.relayBase)
             .put("pairingCode", car.pairingCode)
+            .put("pairToken", car.pairToken)
             .put("name", car.name)
             .put("boundAtMillis", car.boundAtMillis)
             .toString()
