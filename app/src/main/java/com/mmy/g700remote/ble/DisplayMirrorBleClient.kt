@@ -70,6 +70,7 @@ class DisplayMirrorBleClient(
     private var manualDisconnect = false
     private var reconnectJob: Job? = null
     private var reconnectAttempt = 0
+    private var serviceDiscoveryRetry = 0
 
     override fun scanForDevices(): Flow<ScannedDevice> = callbackFlow {
         if (!hasBluetoothPermissions()) {
@@ -183,7 +184,13 @@ class DisplayMirrorBleClient(
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 _connectionState.value = RemoteConnectionState.DiscoveringServices
-                gatt.discoverServices()
+                serviceDiscoveryRetry = 0
+                // A short settle delay before discovery makes the GATT service cache reliable
+                // (especially right after a BLE scan), avoiding empty/incomplete discovery results.
+                scope.launch {
+                    delay(600)
+                    discoverServicesSafely(gatt)
+                }
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 commandQueue = null
                 commandCharacteristic = null
@@ -212,9 +219,20 @@ class DisplayMirrorBleClient(
             val command = service?.getCharacteristic(COMMAND_CHAR_UUID)
             val response = service?.getCharacteristic(RESPONSE_CHAR_UUID)
             if (service == null || command == null || response == null) {
-                failAndDisconnect("DisplayMirror BLE service is incomplete")
+                // Android sometimes reports discovery success before the service cache is populated.
+                // Retry a couple of times before giving up, rather than dropping the connection.
+                if (serviceDiscoveryRetry < MAX_SERVICE_DISCOVERY_RETRIES) {
+                    serviceDiscoveryRetry += 1
+                    scope.launch {
+                        delay(800)
+                        discoverServicesSafely(gatt)
+                    }
+                } else {
+                    failAndDisconnect("DisplayMirror BLE service is incomplete")
+                }
                 return
             }
+            serviceDiscoveryRetry = 0
             commandCharacteristic = command
             responseCharacteristic = response
             if (!gatt.requestMtu(PREFERRED_MTU)) {
@@ -231,9 +249,10 @@ class DisplayMirrorBleClient(
 
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
             negotiatedMtu = if (status == BluetoothGatt.GATT_SUCCESS) mtu else DEFAULT_MTU
-            val service = gatt.getService(SERVICE_UUID) ?: return failAndDisconnect("Service lost after MTU request")
+            // Use the characteristic we already cached in onServicesDiscovered rather than
+            // re-looking-up the service (which can transiently return null right after MTU change).
             val response = responseCharacteristic ?: return failAndDisconnect("Response characteristic missing")
-            enableNotifications(gatt, service, response)
+            enableNotifications(gatt, response.service, response)
         }
 
         override fun onDescriptorWrite(gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
@@ -423,6 +442,11 @@ class DisplayMirrorBleClient(
         assembler.clear()
     }
 
+    @SuppressLint("MissingPermission")
+    private fun discoverServicesSafely(targetGatt: BluetoothGatt) {
+        if (gatt === targetGatt) targetGatt.discoverServices()
+    }
+
     private fun looksLikeBleAddress(address: String): Boolean =
         address != AUTO_ADDRESS && address.count { it == ':' } == 5
 
@@ -444,6 +468,7 @@ class DisplayMirrorBleClient(
     companion object {
         const val AUTO_ADDRESS = "ble-auto"
         private const val AUTO_SCAN_TIMEOUT_MS = 9_000L
+        private const val MAX_SERVICE_DISCOVERY_RETRIES = 2
         val SERVICE_UUID: UUID = UUID.fromString("b1c2d3e4-f5a6-7890-abcd-ef1234567890")
         val COMMAND_CHAR_UUID: UUID = UUID.fromString("b1c2d3e4-f5a6-7890-abcd-ef1234567891")
         val RESPONSE_CHAR_UUID: UUID = UUID.fromString("b1c2d3e4-f5a6-7890-abcd-ef1234567892")

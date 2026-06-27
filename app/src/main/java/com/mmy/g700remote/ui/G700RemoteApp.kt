@@ -5761,8 +5761,10 @@ private fun releaseNotes(language: AppLanguage): ReleaseNotesCopy =
     if (language == AppLanguage.Arabic) {
         ReleaseNotesCopy(
             title = "ما الجديد في الإصدار ${BuildConfig.VERSION_NAME}",
-            intro = "توافق مع DisplayMirror 3.3 وإصلاح الاتصال، مع التحكم السحابي عن بُعد.",
+            intro = "ثبات أفضل للبلوتوث ورسائل اتصال أوضح، مع توافق DisplayMirror 3.3.",
             items = listOf(
+                "ثبات أفضل للبلوتوث: إعادة اتصال تلقائية وإعادة محاولة الأمر إذا انقطع الاتصال أثناء التحكم.",
+                "رسالة أوضح عندما تكون السيارة غير متصلة عبر السحابة (فعّل السحابة وسجّل الدخول على السيارة).",
                 "إصلاح التوافق مع DisplayMirror 3.3 (الإصدار 5 من البروتوكول) — حل خطأ \"يلزم التحديث\" عند الاتصال.",
                 "التحكم السحابي عن بُعد أصبح يعمل: يتصل التطبيق بسيارتك من أي مكان عبر رمز الإقران.",
                 "إعداد جديد: سجّل الدخول ثم امسح رمز QR من شاشة السيارة — دون بحث بلوتوث أو إدخال رمز يدوي.",
@@ -5778,8 +5780,10 @@ private fun releaseNotes(language: AppLanguage): ReleaseNotesCopy =
     } else {
         ReleaseNotesCopy(
             title = "What's new in ${BuildConfig.VERSION_NAME}",
-            intro = "DisplayMirror 3.3 compatibility and a connection fix, with remote cloud control.",
+            intro = "Better Bluetooth stability and clearer connection messages, with DisplayMirror 3.3 support.",
             items = listOf(
+                "Bluetooth stability: auto-reconnect and retry the command if the link drops mid-control (fixes \"GATT not connected\").",
+                "Clearer message when the car is offline over the cloud (enable Cloud and sign in on the car).",
                 "Fixed DisplayMirror 3.3 compatibility (protocol v5) — resolves the \"update required\" error on connect.",
                 "Remote cloud control now works: reach your car from anywhere using the pairing QR.",
                 "New setup: sign in, then scan the QR code on the car screen — no Bluetooth search or manual code entry.",

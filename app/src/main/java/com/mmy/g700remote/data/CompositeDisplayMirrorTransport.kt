@@ -133,9 +133,20 @@ class CompositeDisplayMirrorTransport(
 
     override suspend fun send(command: RemoteCommand, timeoutMs: Long): RemoteResponse {
         val current = activeTransport ?: throw IllegalStateException("No active DisplayMirror transport")
-        return runCatching {
-            current.send(command, timeoutMs)
-        }.getOrElse { firstFailure ->
+        try {
+            return current.send(command, timeoutMs)
+        } catch (firstFailure: Throwable) {
+            // The active transport dropped mid-command (common over BLE). Give its built-in
+            // auto-reconnect a short window to recover, then retry the same command once.
+            val recovered = withTimeoutOrNull(RECOVER_WAIT_MS) {
+                current.connectionState.first {
+                    it is RemoteConnectionState.Ready || it is RemoteConnectionState.Error
+                }
+            }
+            if (recovered is RemoteConnectionState.Ready) {
+                runCatching { return current.send(command, timeoutMs) }
+            }
+            // Still down — fall back to another transport (e.g. cloud / LAN) if one is available.
             val address = activeAddress
             val kind = activeKind
             if (address != null && kind != null) {
@@ -235,5 +246,6 @@ class CompositeDisplayMirrorTransport(
 
     companion object {
         private const val CONNECT_WAIT_MS = 14_000L
+        private const val RECOVER_WAIT_MS = 7_000L
     }
 }
