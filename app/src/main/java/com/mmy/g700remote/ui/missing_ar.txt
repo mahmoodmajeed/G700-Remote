@@ -1,0 +1,69 @@
+Account
+Alerts arrive while the app is connected to the car.
+Audio
+Balance (L–R)
+Big Bed
+Cabin cooling
+Camera
+Camera error: 
+Camera image
+Camera permission is needed to scan the QR code.
+Cameras
+Car Wash
+Cinema
+Cloud
+Cloud control
+Connect to your car to view cameras.
+Connect your car
+Control your car from anywhere over the DisplayMirror cloud.
+Cool the cabin now
+Create an account on the car
+Email
+Enable Remote Access and open the QR
+Fade (F–R)
+Grant camera access
+HVAC
+Install DisplayMirror on the car
+LIVE
+Light Show
+Live view
+Live view streams best on the same Wi-Fi as the car. Over the cloud, use Snapshot.
+Loudness
+New here? Create your account on the car's DisplayMirror screen, then sign in.
+No cameras reported by the car yet.
+No cloud car linked
+Not signed in
+On the car's DisplayMirror screen, create your account and sign in. Use the same account in this app.
+Password
+Pet Mode
+Point the camera at the QR code on your car's DisplayMirror screen
+Re-scan car QR code
+Recent alerts
+Refresh cameras
+Rescue
+Resting
+Romance
+Scan QR code
+Scan car QR code
+Scan it below to pair this phone with your car.
+Scan the QR code
+Scan the QR code on your car's DisplayMirror screen to pair. The app connects over Bluetooth or Wi-Fi when you're near the car, and over the cloud when you're away.
+Scenes
+Schedule
+Scheduled cooling
+Sentinel event
+Sentinel mode
+Setup steps
+Sign in
+Sign in to enable cloud control, QR pairing, and preference sync. Create the account on your car's DisplayMirror screen.
+Sign out
+Sign out?
+Snapshot
+Stop live
+Surround
+The head unit should have the DisplayMirror app by Baghdady92 installed and set up.
+Turn on Remote Access in DisplayMirror and open the pairing QR code on the car screen.
+Use the DisplayMirror account you created on your car's head unit.
+Use without an account (local only)
+Watch my car
+You'll need to sign in again to use cloud control and sync.

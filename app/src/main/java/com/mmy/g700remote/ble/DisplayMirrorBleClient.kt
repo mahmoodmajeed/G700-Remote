@@ -36,10 +36,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 
 class DisplayMirrorBleClient(
     private val context: Context,
@@ -134,9 +136,21 @@ class DisplayMirrorBleClient(
         manualDisconnect = false
         reconnectJob?.cancel()
         disconnectGattOnly()
-        connectedAddress = address
-        _connectionState.value = RemoteConnectionState.Connecting(address)
-        val device = runCatching { bluetoothAdapter.getRemoteDevice(address) }.getOrNull()
+        // QR pairing does not carry a BLE MAC, so when we don't have a concrete address
+        // (or are told to auto-connect) we scan for the DisplayMirror service and use the
+        // first/closest advertiser.
+        val targetAddress = if (looksLikeBleAddress(address)) {
+            address
+        } else {
+            _connectionState.value = RemoteConnectionState.Scanning
+            discoverFirstDeviceAddress() ?: run {
+                _connectionState.value = RemoteConnectionState.Error("No DisplayMirror device found over Bluetooth")
+                return
+            }
+        }
+        connectedAddress = targetAddress
+        _connectionState.value = RemoteConnectionState.Connecting(targetAddress)
+        val device = runCatching { bluetoothAdapter.getRemoteDevice(targetAddress) }.getOrNull()
         if (device == null) {
             _connectionState.value = RemoteConnectionState.Error("Invalid BLE address")
             return
@@ -409,6 +423,13 @@ class DisplayMirrorBleClient(
         assembler.clear()
     }
 
+    private fun looksLikeBleAddress(address: String): Boolean =
+        address != AUTO_ADDRESS && address.count { it == ':' } == 5
+
+    /** Scan for the DisplayMirror BLE service and return the first advertiser's MAC. */
+    private suspend fun discoverFirstDeviceAddress(timeoutMs: Long = AUTO_SCAN_TIMEOUT_MS): String? =
+        withTimeoutOrNull(timeoutMs) { scanForDevices().firstOrNull()?.address }
+
     private fun hasBluetoothPermissions(): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             return ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN) ==
@@ -421,6 +442,8 @@ class DisplayMirrorBleClient(
     }
 
     companion object {
+        const val AUTO_ADDRESS = "ble-auto"
+        private const val AUTO_SCAN_TIMEOUT_MS = 9_000L
         val SERVICE_UUID: UUID = UUID.fromString("b1c2d3e4-f5a6-7890-abcd-ef1234567890")
         val COMMAND_CHAR_UUID: UUID = UUID.fromString("b1c2d3e4-f5a6-7890-abcd-ef1234567891")
         val RESPONSE_CHAR_UUID: UUID = UUID.fromString("b1c2d3e4-f5a6-7890-abcd-ef1234567892")

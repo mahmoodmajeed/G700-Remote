@@ -222,18 +222,32 @@ class RemoteRepository private constructor(
     suspend fun bindCarFromQr(rawQr: String): CloudResult<Unit> {
         val payload = QrPairingPayload.parse(rawQr)
             ?: return CloudResult.Failure("That QR code is not a DisplayMirror pairing code")
-        val account = settings.getCloudAccount()
-            ?: return CloudResult.Failure("Sign in before scanning your car")
         _uiState.update { it.copy(cloudBusy = true, cloudNotice = null) }
-        // Best-effort claim of the one-time pair token (inferred endpoint); non-fatal.
-        val claim = if (payload.pairToken.isNotBlank()) {
-            cloudClient.claimCar(account, payload)
-        } else {
-            CloudResult.Success(Unit)
+        // An account is optional: with one we also bind to the cloud (remote control + sync) by
+        // redeeming the QR pair token via adopt-car; without one the QR still gives us the
+        // pairing code for local BLE/Wi-Fi control.
+        val account = settings.getCloudAccount()
+        var resolvedCode: String? = null
+        var resolvedRelay: String? = null
+        var adoptNotice: String? = null
+        if (account != null && payload.pairToken.isNotBlank()) {
+            when (val res = cloudClient.adoptCar(account, payload)) {
+                is CloudResult.Success -> {
+                    resolvedCode = res.value.pairingCode?.ifBlank { null }
+                    resolvedRelay = res.value.relayUrl?.ifBlank { null }
+                }
+                is CloudResult.Failure -> {
+                    adoptNotice = "Paired for local control. Cloud binding failed: ${res.message}"
+                }
+            }
         }
-        val car = payload.toBoundCar()
+        val base = payload.toBoundCar()
+        val car = base.copy(
+            pairingCode = resolvedCode ?: base.pairingCode,
+            relayBase = resolvedRelay ?: base.relayBase,
+        )
         settings.saveBoundCar(car)
-        if (payload.pairingCode.isNotBlank()) settings.setPairingCode(payload.pairingCode)
+        if (car.pairingCode.isNotBlank()) settings.setPairingCode(car.pairingCode)
         val paired = PairedDevice(
             name = car.name ?: "G700",
             address = car.carId,
@@ -246,12 +260,10 @@ class RemoteRepository private constructor(
                 pairingCode = settings.getPairingCode(),
                 pairedDevice = paired,
                 cloudBusy = false,
-                cloudNotice = (claim as? CloudResult.Failure)?.let { _ ->
-                    "Car saved. Cloud bind will be confirmed on first connection."
-                },
+                cloudNotice = adoptNotice,
             )
         }
-        syncSettingsFromCloud()
+        if (account != null) syncSettingsFromCloud()
         connectSaved()
         return CloudResult.Success(Unit)
     }

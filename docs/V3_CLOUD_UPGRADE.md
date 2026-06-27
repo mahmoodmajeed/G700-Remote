@@ -109,6 +109,36 @@ Links (navigation history) stays in the header as today.
 5. Feature UIs: Camera(+Sentinel), Controls merge, Climate additions, Scenes.
 6. Settings Account section, analytics, docs; version bump; build/test; sign; commit + tag; push.
 
+## 6b. Verified cloud contract (live-tested against the running backend)
+
+Tested with a real account + a real car QR. Confirmed:
+
+- **Login** `POST /api/collections/users/auth-with-password {identity,password}` → `{token, record}`.
+  `record.verified` can be `false` (admin approval) while login still returns a token.
+- **QR redemption / car binding** — the phone calls **`POST /api/adopt-car`** with the QR
+  **`pair` token in place of `carToken`**: `{carId, carToken: <pair>, fleetKey}` + `Authorization: Bearer <jwt>`
+  → `200 {"claimed":true,"pairingCode":"<code>","relayUrl":"wss://…"}`. This binds the car to the
+  account. (There is **no** `claim-car`/`redeem-pairing` endpoint — those 404.)
+- **Settings sync** `POST /api/pull-settings {carId}` + Bearer → `200 {"data":…}` once the car is
+  adopted; before adoption it returns `403 {"error":"not your car"}`. `push-settings` mirrors it.
+- **Owned cars** `GET /api/collections/cars/records` + Bearer → the account's cars
+  (`{car_id, name, online, owner, last_seen}`).
+- **Relay phone leg** `wss://car.wowbooking.one/ws/phone` exists (returns 401, not 404) but its
+  WebSocket auth is enforced by an opaque edge worker. JWT (Bearer / X-Auth-Token / query),
+  the `pair` token, and cookies all returned 401, and the car was offline so end-to-end could not
+  be exercised. `POST /api/relay-auth` exists but is an internal validator (ignores client auth).
+
+### Assumptions / open items
+- **Relay phone-leg auth is unverified.** We send `X-Car-Id` + `X-Auth-Token`(jwt) + Bearer + fleetKey
+  as a best guess. Cloud *remote* control needs one calibration pass with an **online** car. All of
+  it is centralized in `cloud/CloudConfig.kt` + `cloud/CloudRelayClient.kt`. This never blocks local
+  control.
+- **Cloud requires account approval** (`verified`/activation). Until approved, REST cloud ops return
+  403; we surface a clear "account not activated yet" message and fall back to local control.
+- **Local control is the reliable path:** QR provides the pairing `code`; the app then auto-discovers
+  the car over BLE (service-UUID scan) or LAN (mDNS) and completes the `hello` handshake with that
+  code — no account or cloud approval required.
+
 ## 7. Notes / limits
 
 - Sentinel/camera-push alerts arrive only while connected (PocketBase backend does not push

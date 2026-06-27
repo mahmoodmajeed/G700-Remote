@@ -22,18 +22,30 @@ object CloudConfig {
     const val DEFAULT_RELAY_BASE = "wss://car.wowbooking.one"
     const val FLEET_KEY = "7VH_r1OpXzkO_jSQkJdaxdymEgidZoshiWNagNMOihk"
 
-    // Confirmed (PocketBase + car-side custom endpoints).
+    // Confirmed live against the running backend.
     const val PATH_LOGIN = "/api/collections/users/auth-with-password"
     const val PATH_PULL_SETTINGS = "/api/pull-settings"
     const val PATH_PUSH_SETTINGS = "/api/push-settings"
+    const val PATH_CARS = "/api/collections/cars/records"
 
-    // Inferred phone-side endpoints — verify live.
-    const val PATH_CLAIM_CAR = "/api/claim-car"
+    /**
+     * Confirmed: the phone redeems the QR by calling adopt-car with the one-time QR `pair`
+     * token in place of the car's secret `carToken`. Returns {claimed, pairingCode, relayUrl}.
+     */
+    const val PATH_ADOPT_CAR = "/api/adopt-car"
 
-    // Inferred relay phone leg — verify live. The car leg is /ws/car with X-Car-Id + X-Auth-Token.
+    /**
+     * Relay phone leg. The endpoint exists ([RELAY_PHONE_PATH] returns 401, not 404) but its
+     * WebSocket auth is enforced by an opaque edge worker and could not be derived by probing
+     * (JWT / pair / various headers all 401; an online car is needed to calibrate). We send the
+     * car leg's header names as the best guess. Cloud relay is therefore best-effort; local
+     * BLE/Wi-Fi control (with the QR pairing code) is the reliable path and never blocks on this.
+     * The car leg is /ws/car with X-Car-Id + X-Auth-Token.
+     */
     const val RELAY_PHONE_PATH = "/ws/phone"
     const val HEADER_AUTH = "Authorization"
     const val HEADER_CAR_ID = "X-Car-Id"
+    const val HEADER_AUTH_TOKEN = "X-Auth-Token"
     const val HEADER_FLEET_KEY = "X-Fleet-Key"
 
     const val QR_SCHEMA_VERSION = 1

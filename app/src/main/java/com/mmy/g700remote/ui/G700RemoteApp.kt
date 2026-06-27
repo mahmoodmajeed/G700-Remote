@@ -691,18 +691,8 @@ fun G700RemoteApp(
         } else if (state.pairedDevice == null) {
             PairingScreen(
                 state = state,
-                permissionsGranted = permissionsGranted,
-                onStartScan = viewModel::startScan,
-                onStopScan = viewModel::stopScan,
-                onPair = viewModel::pairAndConnect,
-                onPairingCodeChanged = viewModel::setPairingCode,
-                onRequestPermissions = onRequestPermissions,
+                onScanQr = { showQrScanner = true },
                 onStartDemo = { demoMode = true },
-                onScanQr = if (state.isSignedIn) {
-                    { showQrScanner = true }
-                } else {
-                    null
-                },
                 modifier = Modifier.padding(padding),
             )
         } else if (!permissionsGranted) {
@@ -1021,14 +1011,8 @@ private fun UpdateGateScreen(
 @Composable
 private fun PairingScreen(
     state: RemoteUiState,
-    permissionsGranted: Boolean,
-    onStartScan: () -> Unit,
-    onStopScan: () -> Unit,
-    onPair: (com.mmy.g700remote.ble.ScannedDevice) -> Unit,
-    onPairingCodeChanged: (String) -> Unit,
-    onRequestPermissions: () -> Unit,
+    onScanQr: () -> Unit,
     onStartDemo: () -> Unit,
-    onScanQr: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val uriHandler = LocalUriHandler.current
@@ -1038,44 +1022,45 @@ private fun PairingScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Text(tr("Set up G700 Remote"), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            Text(tr("Connect your car"), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(8.dp))
             Text(
-                tr("Use your phone as a clean Jetour G700 remote for lock and unlock, climate, windows, lights, charging, and vehicle status when DisplayMirror exposes them."),
+                tr("Scan the QR code on your car's DisplayMirror screen to pair. The app connects over Bluetooth or Wi-Fi when you're near the car, and over the cloud when you're away."),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        if (onScanQr != null) {
-            item {
-                Section(tr("Connect your car")) {
-                    Text(
-                        tr("Scan the QR code shown on your car's DisplayMirror screen to pair instantly."),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Button(onClick = onScanQr, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Outlined.QrCodeScanner, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(tr("Scan QR code"))
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        tr("Or pair locally over Bluetooth or Wi-Fi below."),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
         item {
-            Section(tr("Setup requirements")) {
+            Section(tr("Setup steps")) {
                 SetupGuideLine(
                     number = "1",
-                    title = tr("Install DisplayMirror"),
-                    body = tr("The head unit should have the DisplayMirror app prepared by Baghdady92 installed and configured."),
+                    title = tr("Install DisplayMirror on the car"),
+                    body = tr("The head unit should have the DisplayMirror app by Baghdady92 installed and set up."),
                 )
+                Spacer(Modifier.height(10.dp))
+                SetupGuideLine(
+                    number = "2",
+                    title = tr("Create an account on the car"),
+                    body = tr("On the car's DisplayMirror screen, create your account and sign in. Use the same account in this app."),
+                )
+                Spacer(Modifier.height(10.dp))
+                SetupGuideLine(
+                    number = "3",
+                    title = tr("Enable Remote Access and open the QR"),
+                    body = tr("Turn on Remote Access in DisplayMirror and open the pairing QR code on the car screen."),
+                )
+                Spacer(Modifier.height(10.dp))
+                SetupGuideLine(
+                    number = "4",
+                    title = tr("Scan the QR code"),
+                    body = tr("Scan it below to pair this phone with your car."),
+                )
+                Spacer(Modifier.height(14.dp))
+                Button(onClick = onScanQr, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) {
+                    Icon(Icons.Outlined.QrCodeScanner, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(tr("Scan QR code"))
+                }
                 Spacer(Modifier.height(10.dp))
                 OutlinedButton(
                     onClick = { uriHandler.openUri(DISPLAY_MIRROR_PROJECT_URL) },
@@ -1084,86 +1069,6 @@ private fun PairingScreen(
                     Icon(Icons.Outlined.Language, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text(tr("Open DisplayMirror project"))
-                }
-                Spacer(Modifier.height(12.dp))
-                SetupGuideLine(
-                    number = "2",
-                    title = tr("Enable Remote Access"),
-                    body = tr("In DisplayMirror on the car screen, turn on Remote Access and keep the generated pairing code visible."),
-                )
-                Spacer(Modifier.height(10.dp))
-                SetupGuideLine(
-                    number = "3",
-                    title = tr("Enter the pairing code here"),
-                    body = tr("Type the code below, then scan and select the car connection."),
-                )
-            }
-        }
-        item {
-            Section(tr("Pairing code")) {
-                PairingCodeField(
-                    value = state.pairingCode,
-                    onValueChange = onPairingCodeChanged,
-                )
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
-                        onClick = { if (permissionsGranted) onStartScan() else onRequestPermissions() },
-                        enabled = !state.isScanning,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Icon(Icons.Outlined.BluetoothSearching, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (permissionsGranted) tr("Scan") else tr("Grant permissions"))
-                    }
-                    OutlinedButton(
-                        onClick = onStopScan,
-                        enabled = permissionsGranted && state.isScanning,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(tr("Stop"))
-                    }
-                }
-                if (state.isScanning) {
-                    Spacer(Modifier.height(12.dp))
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                } else if (state.scanResults.isEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        tr("Scan after entering the pairing code."),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-        if (state.scanResults.isNotEmpty()) {
-            item {
-                Text(tr("Available connections"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            }
-            items(state.scanResults, key = { it.address }) { device ->
-                ElevatedCard(
-                    onClick = { onPair(device) },
-                    shape = RoundedCornerShape(8.dp),
-                    elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp),
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Outlined.Bluetooth, contentDescription = null)
-                        Spacer(Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(device.name ?: tr("Unnamed DisplayMirror device"), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(
-                                "${device.transport.label()}  ${device.address}${if (device.transport == TransportKind.Ble) "  RSSI ${device.rssi}" else ""}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
                 }
             }
         }
@@ -5829,36 +5734,106 @@ private fun releaseNotes(language: AppLanguage): ReleaseNotesCopy =
     if (language == AppLanguage.Arabic) {
         ReleaseNotesCopy(
             title = "ما الجديد في الإصدار ${BuildConfig.VERSION_NAME}",
-            intro = "تحديث كبير يضيف حساب DisplayMirror السحابي والتحكم عن بُعد والكاميرا.",
+            intro = "إعداد أبسط بالكامل عبر رمز QR مع حساب DisplayMirror السحابي والكاميرات.",
             items = listOf(
-                "تسجيل الدخول بحساب DisplayMirror الذي أنشأته على شاشة السيارة لمزامنة سيارتك.",
-                "اقتران فوري عبر مسح رمز QR الظاهر على شاشة DisplayMirror.",
-                "تحكم سحابي جديد للتحكم بسيارتك من أي مكان، إضافةً إلى البلوتوث والشبكة المحلية.",
-                "كاميرا السيارة: التقاط صورة فورية وبثّ مباشر عند الاتصال محلياً.",
-                "وضع المراقبة (Sentinel) مع تنبيهات وصورة مصغّرة عند رصد حركة أو اصطدام.",
-                "مشاهد جاهزة (سينما، حيوان أليف، غسيل السيارة، والمزيد) وتحكم بالصوت والتبريد المجدول.",
-                "تشغيل/إيقاف المكيّف والتكييف الكامل أصبح متاحاً الآن عن بُعد.",
-                "إعادة تنظيم الأقسام: تبويب \"تحكم\" موحّد وتبويب \"كاميرا\" جديد.",
+                "إعداد جديد: سجّل الدخول ثم امسح رمز QR من شاشة السيارة — دون بحث بلوتوث أو إدخال رمز يدوي.",
+                "ربط السيارة بحسابك السحابي تلقائياً عند مسح الرمز، مع تحكم محلي عبر البلوتوث وWi-Fi.",
+                "تحسين الاتصال: اكتشاف البلوتوث تلقائياً والاتصال بأقرب سيارة دون عنوان يدوي.",
+                "إصلاح تشغيل/إيقاف التكييف ليعمل فعلياً من الصفحة الرئيسية وصفحة المناخ.",
+                "تبويب الكاميرات: التبديل الفوري بين كل كاميرات السيارة المتاحة.",
+                "إمكانية تسجيل الدخول من الإعدادات للمستخدمين القادمين من إصدار سابق.",
+                "ترجمة عربية كاملة لكل الشاشات والإعدادات الجديدة.",
+                "متوافق مع DisplayMirror 3.3.",
             ),
         )
     } else {
         ReleaseNotesCopy(
             title = "What's new in ${BuildConfig.VERSION_NAME}",
-            intro = "A major update adding DisplayMirror cloud accounts, remote control, and car camera.",
+            intro = "A simpler, fully QR-based setup with DisplayMirror cloud accounts and cameras.",
             items = listOf(
-                "Sign in with the DisplayMirror account you create on the car's head unit to link your car.",
-                "Instant pairing by scanning the QR code shown on the DisplayMirror screen.",
-                "New cloud control to operate your car from anywhere, alongside Bluetooth and LAN.",
-                "Car camera: take an instant snapshot, plus live view when connected locally.",
-                "Sentinel mode with alerts and a thumbnail when motion or impact is detected.",
-                "Scene presets (cinema, pet, car wash, and more), audio control, and scheduled cabin cooling.",
-                "Climate on/off now works remotely with full HVAC and A/C power control.",
-                "Reorganized sections: a unified Controls tab and a new Camera tab.",
+                "New setup: sign in, then scan the QR code on the car screen — no Bluetooth search or manual code entry.",
+                "Scanning binds the car to your cloud account automatically, with local control over Bluetooth and Wi-Fi.",
+                "Connection fix: Bluetooth now auto-discovers and connects to the nearest car without a manual address.",
+                "Climate on/off fixed so HVAC actually turns off from Home and the Climate tab.",
+                "Cameras tab: instantly switch between all cameras your car reports.",
+                "Sign in from Settings for users upgrading from a previous version.",
+                "Full Arabic translation for all new screens and settings.",
+                "Compatible with DisplayMirror 3.3.",
             ),
         )
     }
 
 private val ArabicTranslations = mapOf(
+    // v2.x cloud / camera / controls strings
+    "Account" to "الحساب",
+    "Alerts arrive while the app is connected to the car." to "تصل التنبيهات أثناء اتصال التطبيق بالسيارة.",
+    "Audio" to "الصوت",
+    "Balance (L–R)" to "التوازن (يسار-يمين)",
+    "Big Bed" to "السرير الكبير",
+    "Cabin cooling" to "تبريد المقصورة",
+    "Camera" to "كاميرا",
+    "Camera error: " to "خطأ في الكاميرا: ",
+    "Camera image" to "صورة الكاميرا",
+    "Camera permission is needed to scan the QR code." to "يلزم إذن الكاميرا لمسح رمز QR.",
+    "Cameras" to "الكاميرات",
+    "Car Wash" to "غسيل السيارة",
+    "Cinema" to "السينما",
+    "Cloud" to "السحابة",
+    "Cloud control" to "التحكم السحابي",
+    "Connect to your car to view cameras." to "اتصل بسيارتك لعرض الكاميرات.",
+    "Connect your car" to "اربط سيارتك",
+    "Control your car from anywhere over the DisplayMirror cloud." to "تحكم بسيارتك من أي مكان عبر سحابة DisplayMirror.",
+    "Cool the cabin now" to "برّد المقصورة الآن",
+    "Create an account on the car" to "أنشئ حساباً على السيارة",
+    "Email" to "البريد الإلكتروني",
+    "Enable Remote Access and open the QR" to "فعّل الوصول عن بعد وافتح رمز QR",
+    "Fade (F–R)" to "التوزيع (أمام-خلف)",
+    "Grant camera access" to "منح إذن الكاميرا",
+    "HVAC" to "التكييف",
+    "Install DisplayMirror on the car" to "ثبّت DisplayMirror على السيارة",
+    "LIVE" to "مباشر",
+    "Light Show" to "عرض الإضاءة",
+    "Live view" to "بث مباشر",
+    "Live view streams best on the same Wi-Fi as the car. Over the cloud, use Snapshot." to "البث المباشر يعمل بأفضل شكل على نفس شبكة Wi-Fi للسيارة. عبر السحابة استخدم اللقطة.",
+    "Loudness" to "علو الصوت",
+    "New here? Create your account on the car's DisplayMirror screen, then sign in." to "جديد هنا؟ أنشئ حسابك على شاشة DisplayMirror في السيارة، ثم سجّل الدخول.",
+    "No cameras reported by the car yet." to "لم تُبلّغ السيارة عن أي كاميرات بعد.",
+    "No cloud car linked" to "لا توجد سيارة سحابية مرتبطة",
+    "Not signed in" to "لم يتم تسجيل الدخول",
+    "On the car's DisplayMirror screen, create your account and sign in. Use the same account in this app." to "على شاشة DisplayMirror في السيارة، أنشئ حسابك وسجّل الدخول. استخدم نفس الحساب في هذا التطبيق.",
+    "Password" to "كلمة المرور",
+    "Pet Mode" to "وضع الحيوان الأليف",
+    "Point the camera at the QR code on your car's DisplayMirror screen" to "وجّه الكاميرا نحو رمز QR على شاشة DisplayMirror في سيارتك",
+    "Re-scan car QR code" to "أعد مسح رمز QR للسيارة",
+    "Recent alerts" to "التنبيهات الأخيرة",
+    "Refresh cameras" to "تحديث الكاميرات",
+    "Rescue" to "الإنقاذ",
+    "Resting" to "الراحة",
+    "Romance" to "رومانسي",
+    "Scan QR code" to "مسح رمز QR",
+    "Scan car QR code" to "امسح رمز QR للسيارة",
+    "Scan it below to pair this phone with your car." to "امسحه أدناه لإقران هذا الهاتف بسيارتك.",
+    "Scan the QR code" to "امسح رمز QR",
+    "Scan the QR code on your car's DisplayMirror screen to pair. The app connects over Bluetooth or Wi-Fi when you're near the car, and over the cloud when you're away." to "امسح رمز QR على شاشة DisplayMirror في سيارتك للإقران. يتصل التطبيق عبر البلوتوث أو Wi-Fi عندما تكون قرب السيارة، وعبر السحابة عندما تكون بعيداً.",
+    "Scenes" to "المشاهد",
+    "Schedule" to "الجدولة",
+    "Scheduled cooling" to "التبريد المجدول",
+    "Sentinel event" to "حدث المراقبة",
+    "Sentinel mode" to "وضع المراقبة",
+    "Setup steps" to "خطوات الإعداد",
+    "Sign in" to "تسجيل الدخول",
+    "Sign in to enable cloud control, QR pairing, and preference sync. Create the account on your car's DisplayMirror screen." to "سجّل الدخول لتفعيل التحكم السحابي والاقتران عبر QR ومزامنة التفضيلات. أنشئ الحساب على شاشة DisplayMirror في سيارتك.",
+    "Sign out" to "تسجيل الخروج",
+    "Sign out?" to "تسجيل الخروج؟",
+    "Snapshot" to "لقطة",
+    "Stop live" to "إيقاف البث",
+    "Surround" to "محيطي",
+    "The head unit should have the DisplayMirror app by Baghdady92 installed and set up." to "يجب أن يكون تطبيق DisplayMirror من Baghdady92 مثبتاً ومُعدّاً على شاشة السيارة.",
+    "Turn on Remote Access in DisplayMirror and open the pairing QR code on the car screen." to "فعّل الوصول عن بعد في DisplayMirror وافتح رمز QR للإقران على شاشة السيارة.",
+    "Use the DisplayMirror account you created on your car's head unit." to "استخدم حساب DisplayMirror الذي أنشأته على شاشة سيارتك.",
+    "Use without an account (local only)" to "استخدام بدون حساب (محلي فقط)",
+    "Watch my car" to "راقب سيارتي",
+    "You'll need to sign in again to use cloud control and sync." to "ستحتاج إلى تسجيل الدخول مرة أخرى لاستخدام التحكم السحابي والمزامنة.",
     "Confirm" to "تأكيد",
     "Use biometrics or device PIN to continue." to "استخدم البصمة أو رمز الهاتف للمتابعة.",
     "Confirm command" to "تأكيد الأمر",

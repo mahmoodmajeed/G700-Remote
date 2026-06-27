@@ -66,6 +66,13 @@ data class QrPairingPayload(
     }
 }
 
+/** Response of adopt-car (QR redemption): the car is now bound to the account. */
+data class AdoptResult(
+    val claimed: Boolean,
+    val pairingCode: String?,
+    val relayUrl: String?,
+)
+
 /** Result of a cloud call that the UI can render without leaking transport details. */
 sealed class CloudResult<out T> {
     data class Success<T>(val value: T) : CloudResult<T>()

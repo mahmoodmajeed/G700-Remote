@@ -1,6 +1,7 @@
 package com.mmy.g700remote.data
 
 import com.mmy.g700remote.ble.ConnectionPreference
+import com.mmy.g700remote.ble.DisplayMirrorBleClient
 import com.mmy.g700remote.ble.DisplayMirrorTransport
 import com.mmy.g700remote.ble.RemoteConnectionState
 import com.mmy.g700remote.ble.ScannedDevice
@@ -157,7 +158,7 @@ class CompositeDisplayMirrorTransport(
         val transport = transportFor(kind)
         activeTransport = transport
         val address = when (kind) {
-            TransportKind.Ble -> savedAddress
+            TransportKind.Ble -> if (looksLikeBleMac(savedAddress)) savedAddress else DisplayMirrorBleClient.AUTO_ADDRESS
             TransportKind.Lan -> if (looksLikeLanEndpoint(savedAddress)) savedAddress else DisplayMirrorLanClient.AUTO_ADDRESS
             TransportKind.Cloud -> savedAddress
         }
@@ -188,11 +189,9 @@ class CompositeDisplayMirrorTransport(
         val bleEnabled = settings.isBleEnabled()
         val lanEnabled = settings.isLanEnabled()
         val cloudEnabled = isCloudAvailable()
-        val addressKind = when {
-            address.count { it == ':' } >= 5 -> TransportKind.Ble
-            looksLikeLanEndpoint(address) -> TransportKind.Lan
-            else -> TransportKind.Cloud
-        }
+        // BLE and LAN both auto-discover (BLE scans the service UUID, LAN uses mDNS), so they
+        // are always valid candidates when enabled — even when the saved address is a cloud
+        // carId from QR pairing rather than a concrete MAC / host:port.
         val preferred = when (settings.getConnectionPreference()) {
             ConnectionPreference.BleFirst -> listOf(TransportKind.Ble, TransportKind.Lan, TransportKind.Cloud)
             ConnectionPreference.LanFirst -> listOf(TransportKind.Lan, TransportKind.Ble, TransportKind.Cloud)
@@ -206,14 +205,9 @@ class CompositeDisplayMirrorTransport(
             .filter { it != TransportKind.Ble || bleEnabled }
             .filter { it != TransportKind.Lan || lanEnabled }
             .filter { it != TransportKind.Cloud || cloudEnabled }
-            .filter { it != TransportKind.Ble || addressKind == TransportKind.Ble }
-            .ifEmpty {
-                preferred
-                    .filter { it != TransportKind.Ble || bleEnabled }
-                    .filter { it != TransportKind.Lan || lanEnabled }
-                    .filter { it != TransportKind.Cloud || cloudEnabled }
-            }
     }
+
+    private fun looksLikeBleMac(address: String): Boolean = address.count { it == ':' } == 5
 
     private fun fallbackFor(kind: TransportKind): TransportKind? {
         val candidates = candidatesFor(activeAddress ?: return null)

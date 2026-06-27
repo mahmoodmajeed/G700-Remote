@@ -35,20 +35,25 @@ class CloudClient(
         }.failIfBlankToken()
 
     /**
-     * Redeem the one-time QR `pair` token to bind the scanned car to this account.
-     * INFERRED endpoint. Treated as best-effort by the caller: if the car was already adopted by
-     * the headunit login, relay access can still work without this call.
+     * Redeem the one-time QR `pair` token to bind the scanned car to this account. Confirmed:
+     * adopt-car accepts the QR `pair` in place of the car's secret `carToken`. Returns
+     * {claimed, pairingCode, relayUrl}.
      */
-    suspend fun claimCar(account: CloudAccount, payload: QrPairingPayload): CloudResult<Unit> =
+    suspend fun adoptCar(account: CloudAccount, payload: QrPairingPayload): CloudResult<AdoptResult> =
         post(
-            path = CloudConfig.PATH_CLAIM_CAR,
+            path = CloudConfig.PATH_ADOPT_CAR,
             body = JSONObject()
-                .put("car", payload.carId)
                 .put("carId", payload.carId)
-                .put("pair", payload.pairToken)
+                .put("carToken", payload.pairToken)
                 .put("fleetKey", CloudConfig.FLEET_KEY),
             bearer = account.token,
-        ).map { }
+        ).map { json ->
+            AdoptResult(
+                claimed = json.optBoolean("claimed", false),
+                pairingCode = json.optString("pairingCode").ifBlank { null },
+                relayUrl = json.optString("relayUrl").ifBlank { null },
+            )
+        }
 
     /** Pull the car-scoped synced settings (`display_prefs`). Confirmed contract. */
     suspend fun pullSettings(account: CloudAccount, carId: String): CloudResult<JSONObject?> =
@@ -111,7 +116,8 @@ class CloudClient(
         }
 
     private fun httpError(code: Int): String = when (code) {
-        400, 403 -> "Wrong email or password, or the account is not yet approved."
+        400, 401 -> "Wrong email or password."
+        403 -> "This account is not activated yet. Ask the DisplayMirror administrator to approve it, then try again."
         404 -> "Cloud endpoint not found"
         in 500..599 -> "Cloud server error ($code)"
         else -> "Cloud request failed ($code)"

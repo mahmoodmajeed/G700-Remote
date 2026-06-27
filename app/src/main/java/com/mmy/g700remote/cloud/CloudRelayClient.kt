@@ -76,9 +76,13 @@ class CloudRelayClient(
         _connectionState.value = RemoteConnectionState.Connecting("cloud:${car.carId}")
 
         val opened = CompletableDeferred<Boolean>()
+        // Relay phone-leg auth is enforced by an opaque edge worker (see CloudConfig). We send the
+        // account JWT under several header names plus the car id; this is best-effort and may need
+        // calibration against an online car. Local transports remain the reliable path.
         val request = Request.Builder()
             .url(toWebSocketUrl(url))
             .header(CloudConfig.HEADER_AUTH, CloudConfig.bearer(account.token))
+            .header(CloudConfig.HEADER_AUTH_TOKEN, account.token)
             .header(CloudConfig.HEADER_CAR_ID, car.carId)
             .header(CloudConfig.HEADER_FLEET_KEY, CloudConfig.FLEET_KEY)
             .build()
