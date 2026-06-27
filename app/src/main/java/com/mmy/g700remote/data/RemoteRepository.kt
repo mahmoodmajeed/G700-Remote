@@ -625,12 +625,14 @@ class RemoteRepository private constructor(
     private fun startForegroundRefresh() {
         if (refreshJob?.isActive == true) return
         refreshJob = scope.launch {
-            delay(500)
+            delay(1_500)
+            var cycle = 0
             while (true) {
                 if (_uiState.value.connectionState is RemoteConnectionState.Ready) {
-                    refreshAll()
+                    refreshAll(cycle = cycle)
+                    cycle += 1
                 }
-                delay(3_000)
+                delay(FOREGROUND_REFRESH_INTERVAL_MS)
             }
         }
     }
@@ -649,11 +651,16 @@ class RemoteRepository private constructor(
         }
     }
 
-    private suspend fun refreshAll(forceLocation: Boolean = false) {
+    private suspend fun refreshAll(forceLocation: Boolean = false, cycle: Int = 0) {
+        // Keep the per-cycle BLE load light: status + climate every cycle, the heavier charging
+        // queries only every few cycles. This avoids flooding a flaky BLE link with 5 commands
+        // every refresh, which was destabilizing the connection.
         sendForRefresh(RemoteCommand.Status)
         sendForRefresh(RemoteCommand.Climate(ClimateAction.Status))
-        sendForRefresh(RemoteCommand.ParkingCharge(ParkingChargeAction.Status))
-        sendForRefresh(RemoteCommand.RaceCharge(RaceChargeAction.Status))
+        if (cycle % HEAVY_REFRESH_EVERY == 0) {
+            sendForRefresh(RemoteCommand.ParkingCharge(ParkingChargeAction.Status))
+            sendForRefresh(RemoteCommand.RaceCharge(RaceChargeAction.Status))
+        }
         refreshLocationIfDue(forceLocation)
     }
 
@@ -815,10 +822,13 @@ class RemoteRepository private constructor(
             }
 
             is RemoteResponse.Error -> _uiState.update {
-                if (response.error == "unknown_cmd" && response.message?.contains("hello", ignoreCase = true) == true) {
-                    it
-                } else {
-                    it.copy(lastError = response.message ?: response.error ?: "Protocol error")
+                when {
+                    // A corrupted/partial frame from a flaky BLE link — not a real protocol error,
+                    // so don't surface it to the user; the next refresh will recover the value.
+                    response.error == "parse_error" -> it
+                    response.error == "unknown_cmd" &&
+                        response.message?.contains("hello", ignoreCase = true) == true -> it
+                    else -> it.copy(lastError = response.message ?: response.error ?: "Protocol error")
                 }
             }
 
@@ -1271,5 +1281,7 @@ class RemoteRepository private constructor(
         const val MAX_NAV_HISTORY = 50
         const val MAX_SENTINEL_ALERTS = 20
         const val LOCATION_REFRESH_INTERVAL_MS = 60_000L
+        const val FOREGROUND_REFRESH_INTERVAL_MS = 5_000L
+        const val HEAVY_REFRESH_EVERY = 3
     }
 }

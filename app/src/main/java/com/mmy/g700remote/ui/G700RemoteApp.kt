@@ -2053,8 +2053,11 @@ private fun ClimateScreen(
     val ready = state.connectionState is RemoteConnectionState.Ready
     val telemetry = state.telemetry
     val airOn = telemetry.fanSpeed?.let { it > 0 }
+    var comfortFetched by remember { mutableStateOf(false) }
     LaunchedEffect(ready) {
-        if (ready) {
+        if (ready && !comfortFetched) {
+            comfortFetched = true
+            delay(900) // let the link settle before adding these heavier queries
             onCommand(RemoteCommand.Audio)
             onCommand(RemoteCommand.CabinCooling(CabinCoolingAction.Status))
         }
@@ -5761,9 +5764,12 @@ private fun releaseNotes(language: AppLanguage): ReleaseNotesCopy =
     if (language == AppLanguage.Arabic) {
         ReleaseNotesCopy(
             title = "ما الجديد في الإصدار ${BuildConfig.VERSION_NAME}",
-            intro = "ثبات أفضل للبلوتوث ورسائل اتصال أوضح، مع توافق DisplayMirror 3.3.",
+            intro = "تحسينات ثبات البلوتوث وتقليل الأخطاء على الشاشة.",
             items = listOf(
-                "ثبات أفضل للبلوتوث: إعادة اتصال تلقائية وإعادة محاولة الأمر إذا انقطع الاتصال أثناء التحكم.",
+                "تقليل ضغط البلوتوث: تحديث أبطأ وأخف للحفاظ على ثبات الاتصال مع وحدة السيارة.",
+                "أولوية اتصال أعلى للبلوتوث وإعادة محاولة اكتشاف الخدمة لتقليل الانقطاعات.",
+                "عدم إظهار أخطاء الإطارات الجزئية المؤقتة كرسائل مزعجة على الشاشة.",
+                "إعادة اتصال تلقائية وإعادة محاولة الأمر إذا انقطع الاتصال أثناء التحكم.",
                 "رسالة أوضح عندما تكون السيارة غير متصلة عبر السحابة (فعّل السحابة وسجّل الدخول على السيارة).",
                 "إصلاح التوافق مع DisplayMirror 3.3 (الإصدار 5 من البروتوكول) — حل خطأ \"يلزم التحديث\" عند الاتصال.",
                 "التحكم السحابي عن بُعد أصبح يعمل: يتصل التطبيق بسيارتك من أي مكان عبر رمز الإقران.",
@@ -5780,9 +5786,12 @@ private fun releaseNotes(language: AppLanguage): ReleaseNotesCopy =
     } else {
         ReleaseNotesCopy(
             title = "What's new in ${BuildConfig.VERSION_NAME}",
-            intro = "Better Bluetooth stability and clearer connection messages, with DisplayMirror 3.3 support.",
+            intro = "More Bluetooth stability and fewer on-screen errors.",
             items = listOf(
-                "Bluetooth stability: auto-reconnect and retry the command if the link drops mid-control (fixes \"GATT not connected\").",
+                "Lighter Bluetooth load: slower, smaller status refresh to keep the link stable with the head unit.",
+                "Higher BLE connection priority and service-discovery retry to reduce dropouts.",
+                "Stopped showing transient partial-frame errors (like the cabin-cooling parse error) as pop-ups.",
+                "Auto-reconnect and retry the command if the link drops mid-control.",
                 "Clearer message when the car is offline over the cloud (enable Cloud and sign in on the car).",
                 "Fixed DisplayMirror 3.3 compatibility (protocol v5) — resolves the \"update required\" error on connect.",
                 "Remote cloud control now works: reach your car from anywhere using the pairing QR.",

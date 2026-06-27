@@ -235,6 +235,9 @@ class DisplayMirrorBleClient(
             serviceDiscoveryRetry = 0
             commandCharacteristic = command
             responseCharacteristic = response
+            // Ask for a faster connection interval — helps these flaky head-unit BLE stacks hold
+            // the link and move data without stalling.
+            runCatching { gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH) }
             if (!gatt.requestMtu(PREFERRED_MTU)) {
                 enableNotifications(gatt, service, response)
             } else {
