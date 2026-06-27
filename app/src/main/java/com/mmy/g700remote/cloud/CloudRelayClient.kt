@@ -10,6 +10,7 @@ import com.mmy.g700remote.protocol.RemoteProtocolCodec
 import com.mmy.g700remote.protocol.RemoteResponse
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -130,10 +131,19 @@ class CloudRelayClient(
                     error("Wrong DisplayMirror pairing code")
                 hello is RemoteResponse.Error && hello.error == "locked_out" ->
                     error("Too many wrong codes. Try again later.")
+                hello is RemoteResponse.Error && hello.error == "update_required" ->
+                    error("The car needs a newer DisplayMirror, or this app needs updating.")
                 else -> error("Cloud handshake rejected by DisplayMirror")
             }
-        }.onFailure {
-            _connectionState.value = RemoteConnectionState.Error(it.message ?: "Cloud handshake failed")
+        }.onFailure { throwable ->
+            // The relay accepted us, but the car never answered the handshake — it's almost always
+            // offline on the relay (DisplayMirror not signed in / Cloud disabled / no internet).
+            val message = if (throwable is TimeoutCancellationException) {
+                "Car is offline over the cloud. On the car, open DisplayMirror, sign in, and turn on Cloud / Remote Access."
+            } else {
+                throwable.message ?: "Cloud handshake failed"
+            }
+            _connectionState.value = RemoteConnectionState.Error(message)
             closeSocketOnly()
         }
     }
