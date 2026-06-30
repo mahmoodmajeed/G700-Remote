@@ -3,17 +3,17 @@ package com.mmy.g700remote.cloud
 /**
  * Single source of truth for the DisplayMirror cloud contract.
  *
- * The backend is the DisplayMirror developer's PocketBase instance plus an edge WebSocket relay.
+ * Two-layer auth model (confirmed from decompiled official Car Key companion app):
+ *  Layer 1 — relay transport: POST /api/claim-pair with QR `pair` token → returns `clientToken`.
+ *             Phone WebSocket upgrade to /ws/phone sends X-Car-Id + X-Auth-Token=clientToken.
+ *  Layer 2 — in-channel handshake: `{"cmd":"hello","protocolVersion":5,"pairingCode":"<digits>"}`.
+ *
  * All of the following were CONFIRMED live against the running backend (DisplayMirror 3.x):
  *  - [DEFAULT_API_BASE], [DEFAULT_RELAY_BASE], [FLEET_KEY]
  *  - [PATH_LOGIN] (PocketBase users auth-with-password)
+ *  - [PATH_CLAIM_PAIR] — redeems QR pair token → returns clientToken + carId + relayUrl
  *  - [PATH_PULL_SETTINGS] / [PATH_PUSH_SETTINGS] (car-scoped settings sync)
- *  - [PATH_ADOPT_CAR] — the phone redeems the QR `pair` token (sent as `carToken`) to bind the car
- *  - [RELAY_PHONE_PATH] — the phone joins the relay on /ws/car with [HEADER_CAR_ID] +
- *    [HEADER_AUTH_TOKEN] = the QR pair token (101 verified; no account required)
- *
- * Everything funnels through here so any future change is a one-file edit. The rest of the app
- * (BLE/LAN control + all new feature UIs) works regardless of cloud availability.
+ *  - [RELAY_PHONE_PATH] with [HEADER_CAR_ID] + [HEADER_AUTH_TOKEN]=clientToken → 101
  */
 object CloudConfig {
     const val DEFAULT_API_BASE = "https://car-api.wowbooking.one"
@@ -27,19 +27,18 @@ object CloudConfig {
     const val PATH_CARS = "/api/collections/cars/records"
 
     /**
-     * Confirmed: the phone redeems the QR by calling adopt-car with the one-time QR `pair`
-     * token in place of the car's secret `carToken`. Returns {claimed, pairingCode, relayUrl}.
+     * Redeems the QR `pair` token to bind the car and mint a relay phone credential.
+     * POST {pair, device, deviceId} + Bearer JWT → {carId, clientToken, relayUrl, pairingCode?}.
+     * The returned `clientToken` is stored as [BoundCar.cloudClientToken] and used as
+     * X-Auth-Token on [RELAY_PHONE_PATH]. Confirmed from official Car Key companion app source.
      */
-    const val PATH_ADOPT_CAR = "/api/adopt-car"
+    const val PATH_CLAIM_PAIR = "/api/claim-pair"
 
     /**
-     * Relay leg — VERIFIED live. The phone connects to the SAME `/ws/car` endpoint as the car,
-     * authenticating with `X-Car-Id` + `X-Auth-Token` = the QR **pair** token (confirmed: a 101
-     * upgrade; the pair↔carId binding is validated — JWT/garbage/wrong-car all 401, and no account
-     * is required). The relay then bridges the pair-authed connection to the real car (authed with
-     * its secret carToken) and forwards the phone's open/msg/close envelopes to it.
+     * Phone-leg WebSocket endpoint. Upgrade headers: X-Car-Id=carId, X-Auth-Token=clientToken
+     * (from /api/claim-pair response). Confirmed from official Car Key companion app.
      */
-    const val RELAY_PHONE_PATH = "/ws/car"
+    const val RELAY_PHONE_PATH = "/ws/phone"
     const val HEADER_AUTH = "Authorization"
     const val HEADER_CAR_ID = "X-Car-Id"
     const val HEADER_AUTH_TOKEN = "X-Auth-Token"

@@ -35,25 +35,45 @@ class CloudClient(
         }.failIfBlankToken()
 
     /**
-     * Redeem the one-time QR `pair` token to bind the scanned car to this account. Confirmed:
-     * adopt-car accepts the QR `pair` in place of the car's secret `carToken`. Returns
-     * {claimed, pairingCode, relayUrl}.
+     * Redeem the QR `pair` token via /api/claim-pair to bind the car and obtain the relay
+     * phone-leg credential. Request: {pair, device, deviceId} + Bearer JWT. Response fields:
+     * carId, clientToken (→ X-Auth-Token on /ws/phone), relayUrl, pairingCode (optional).
      */
-    suspend fun adoptCar(account: CloudAccount, payload: QrPairingPayload): CloudResult<AdoptResult> =
-        post(
-            path = CloudConfig.PATH_ADOPT_CAR,
+    suspend fun claimPair(
+        account: CloudAccount,
+        pair: String,
+        device: String,
+        deviceId: String,
+    ): CloudResult<ClaimPairResult> {
+        return when (val raw = post(
+            path = CloudConfig.PATH_CLAIM_PAIR,
             body = JSONObject()
-                .put("carId", payload.carId)
-                .put("carToken", payload.pairToken)
-                .put("fleetKey", CloudConfig.FLEET_KEY),
+                .put("pair", pair)
+                .put("device", device)
+                .put("deviceId", deviceId),
             bearer = account.token,
-        ).map { json ->
-            AdoptResult(
-                claimed = json.optBoolean("claimed", false),
-                pairingCode = json.optString("pairingCode").ifBlank { null },
-                relayUrl = json.optString("relayUrl").ifBlank { null },
-            )
+        )) {
+            is CloudResult.Failure -> raw
+            is CloudResult.Success -> {
+                val json = raw.value
+                val carId = json.optString("carId").ifBlank { null }
+                val clientToken = json.optString("clientToken").ifBlank { null }
+                if (carId == null || clientToken == null) {
+                    CloudResult.Failure("Unexpected server response")
+                } else {
+                    CloudResult.Success(
+                        ClaimPairResult(
+                            carId = carId,
+                            clientToken = clientToken,
+                            relayUrl = json.optString("relayUrl").ifBlank { null }
+                                ?: CloudConfig.DEFAULT_RELAY_BASE,
+                            pairingCode = json.optString("pairingCode").ifBlank { null },
+                        ),
+                    )
+                }
+            }
         }
+    }
 
     /** Pull the car-scoped synced settings (`display_prefs`). Confirmed contract. */
     suspend fun pullSettings(account: CloudAccount, carId: String): CloudResult<JSONObject?> =

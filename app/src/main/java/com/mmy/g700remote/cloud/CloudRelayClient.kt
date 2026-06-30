@@ -62,7 +62,7 @@ class CloudRelayClient(
         closeSocketOnly()
 
         val car = boundCarProvider()
-        if (car == null || car.pairToken.isBlank()) {
+        if (car == null || car.cloudClientToken.isBlank()) {
             _connectionState.value = RemoteConnectionState.Error("Scan your car's QR code to use cloud control")
             return
         }
@@ -71,12 +71,12 @@ class CloudRelayClient(
         _connectionState.value = RemoteConnectionState.Connecting("cloud:${car.carId}")
 
         val opened = CompletableDeferred<Boolean>()
-        // Verified relay phone-leg: connect to /ws/car with X-Car-Id + X-Auth-Token = the QR pair
-        // token. The relay bridges this to the real car. No account needed (see CloudConfig).
+        // Phone-leg auth confirmed from official Car Key companion app:
+        // X-Car-Id = carId, X-Auth-Token = clientToken (from /api/claim-pair response).
         val request = Request.Builder()
             .url(toWebSocketUrl(url))
             .header(CloudConfig.HEADER_CAR_ID, car.carId)
-            .header(CloudConfig.HEADER_AUTH_TOKEN, car.pairToken)
+            .header(CloudConfig.HEADER_AUTH_TOKEN, car.cloudClientToken)
             .build()
 
         val listener = object : WebSocketListener() {

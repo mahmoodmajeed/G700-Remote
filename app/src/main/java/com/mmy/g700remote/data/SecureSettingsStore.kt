@@ -89,6 +89,7 @@ class SecureSettingsStore(context: Context) : SettingsStore {
                 relayBase = obj.optString("relayBase"),
                 pairingCode = obj.optString("pairingCode"),
                 pairToken = obj.optString("pairToken"),
+                cloudClientToken = obj.optString("cloudClientToken"),
                 name = obj.optString("name").ifBlank { null },
                 boundAtMillis = obj.optLong("boundAtMillis").takeIf { it > 0L } ?: System.currentTimeMillis(),
             )
@@ -102,6 +103,7 @@ class SecureSettingsStore(context: Context) : SettingsStore {
             .put("relayBase", car.relayBase)
             .put("pairingCode", car.pairingCode)
             .put("pairToken", car.pairToken)
+            .put("cloudClientToken", car.cloudClientToken)
             .put("name", car.name)
             .put("boundAtMillis", car.boundAtMillis)
             .toString()
@@ -358,6 +360,14 @@ class SecureSettingsStore(context: Context) : SettingsStore {
         prefs.edit().putString(KEY_LAST_SEEN_RELEASE_NOTES_VERSION, version).apply()
     }
 
+    override fun getOrCreateDeviceId(): String {
+        val existing = prefs.getString(KEY_DEVICE_ID, null)
+        if (!existing.isNullOrBlank()) return existing
+        val newId = java.util.UUID.randomUUID().toString()
+        prefs.edit().putString(KEY_DEVICE_ID, newId).apply()
+        return newId
+    }
+
     private fun putEncryptedString(key: String, value: String) {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateSecretKey())
@@ -432,6 +442,7 @@ class SecureSettingsStore(context: Context) : SettingsStore {
         private const val KEY_LOCK_MAPPING = "lock_mapping"
         private const val KEY_LOGGING_ENABLED = "logging_enabled"
         private const val KEY_LAST_SEEN_RELEASE_NOTES_VERSION = "last_seen_release_notes_version"
+        private const val KEY_DEVICE_ID = "device_id"
         private const val MAX_NAV_HISTORY = 50
         private const val NO_ASSOCIATION_ID = -1
     }

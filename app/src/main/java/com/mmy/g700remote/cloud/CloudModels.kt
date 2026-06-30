@@ -10,23 +10,25 @@ data class CloudAccount(
 )
 
 /**
- * A car bound to the account, captured from the headunit QR code.
- *
- * QR payload (from `ControlPanelActivity` / `QrEncoder`):
- * `{"v":1,"relay":"wss://...","api":"https://...","car":"car-<id>","pair":"<token>","code":"<digits>"}`
+ * A car bound to the account, captured from the headunit QR code and confirmed via
+ * `/api/claim-pair`. The [cloudClientToken] (returned by claim-pair as `clientToken`) is the
+ * credential sent as `X-Auth-Token` on the `/ws/phone` WebSocket leg. The [pairToken] from the
+ * QR is the one-time token passed to claim-pair and is kept only for re-binding purposes.
  */
 data class BoundCar(
     val carId: String,
     val apiBase: String,
     val relayBase: String,
     val pairingCode: String,
-    /** QR `pair` token — the phone's relay credential (X-Auth-Token on /ws/car). Verified live. */
+    /** QR one-time `pair` token — passed to /api/claim-pair, NOT used for relay auth. */
     val pairToken: String = "",
+    /** Relay phone-leg credential minted by /api/claim-pair → `clientToken`. Used as X-Auth-Token on /ws/phone. */
+    val cloudClientToken: String = "",
     val name: String? = null,
     val boundAtMillis: Long = System.currentTimeMillis(),
 )
 
-/** Parsed, not-yet-bound QR payload. `pair` is a one-time bind token redeemed against the cloud. */
+/** Parsed, not-yet-bound QR payload. `pair` is a one-time bind token redeemed via /api/claim-pair. */
 data class QrPairingPayload(
     val schemaVersion: Int,
     val relayBase: String,
@@ -69,11 +71,15 @@ data class QrPairingPayload(
     }
 }
 
-/** Response of adopt-car (QR redemption): the car is now bound to the account. */
-data class AdoptResult(
-    val claimed: Boolean,
+/**
+ * Response of /api/claim-pair: the phone's relay credential and confirmed car binding.
+ * Fields map directly from the JSON: carId, clientToken, relayUrl, pairingCode.
+ */
+data class ClaimPairResult(
+    val carId: String,
+    val clientToken: String,
+    val relayUrl: String,
     val pairingCode: String?,
-    val relayUrl: String?,
 )
 
 /** Result of a cloud call that the UI can render without leaking transport details. */

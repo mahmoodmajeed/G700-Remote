@@ -54,4 +54,6 @@ interface SettingsStore {
     fun setLoggingEnabled(enabled: Boolean)
     fun getLastSeenReleaseNotesVersion(): String?
     fun setLastSeenReleaseNotesVersion(version: String)
+    /** Returns a stable UUID identifying this device installation; creates one on first call. */
+    fun getOrCreateDeviceId(): String
 }

@@ -2,6 +2,7 @@ package com.mmy.g700remote.data
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import com.mmy.g700remote.analytics.G700Analytics
 import com.mmy.g700remote.ble.DisplayMirrorTransport
 import com.mmy.g700remote.cloud.BoundCar
@@ -223,21 +224,28 @@ class RemoteRepository private constructor(
         val payload = QrPairingPayload.parse(rawQr)
             ?: return CloudResult.Failure("That QR code is not a DisplayMirror pairing code")
         _uiState.update { it.copy(cloudBusy = true, cloudNotice = null) }
-        // An account is optional: with one we also bind to the cloud (remote control + sync) by
-        // redeeming the QR pair token via adopt-car; without one the QR still gives us the
-        // pairing code for local BLE/Wi-Fi control.
+        // An account is needed to call /api/claim-pair and get the relay clientToken.
+        // Without an account we still bind the QR locally (pairing code for BLE/LAN control).
         val account = settings.getCloudAccount()
+        var cloudClientToken = ""
         var resolvedCode: String? = null
         var resolvedRelay: String? = null
-        var adoptNotice: String? = null
+        var cloudNotice: String? = null
         if (account != null && payload.pairToken.isNotBlank()) {
-            when (val res = cloudClient.adoptCar(account, payload)) {
+            val deviceId = settings.getOrCreateDeviceId()
+            when (val res = cloudClient.claimPair(
+                account = account,
+                pair = payload.pairToken,
+                device = Build.MODEL,
+                deviceId = deviceId,
+            )) {
                 is CloudResult.Success -> {
+                    cloudClientToken = res.value.clientToken
                     resolvedCode = res.value.pairingCode?.ifBlank { null }
-                    resolvedRelay = res.value.relayUrl?.ifBlank { null }
+                    resolvedRelay = res.value.relayUrl.ifBlank { null }
                 }
                 is CloudResult.Failure -> {
-                    adoptNotice = "Paired for local control. Cloud binding failed: ${res.message}"
+                    cloudNotice = "Paired for local control. Cloud binding failed: ${res.message}"
                 }
             }
         }
@@ -245,6 +253,7 @@ class RemoteRepository private constructor(
         val car = base.copy(
             pairingCode = resolvedCode ?: base.pairingCode,
             relayBase = resolvedRelay ?: base.relayBase,
+            cloudClientToken = cloudClientToken,
         )
         settings.saveBoundCar(car)
         if (car.pairingCode.isNotBlank()) settings.setPairingCode(car.pairingCode)
@@ -260,7 +269,7 @@ class RemoteRepository private constructor(
                 pairingCode = settings.getPairingCode(),
                 pairedDevice = paired,
                 cloudBusy = false,
-                cloudNotice = adoptNotice,
+                cloudNotice = cloudNotice,
             )
         }
         if (account != null) syncSettingsFromCloud()
@@ -317,7 +326,19 @@ class RemoteRepository private constructor(
 
     fun captureSnapshot(cameraId: String) {
         _uiState.update { it.copy(camera = it.camera.copy(loadingSnapshot = true, lastCameraError = null)) }
-        send(RemoteCommand.Snapshot(camera = cameraId, requestId = "snap-${System.currentTimeMillis()}"))
+        send(RemoteCommand.Snapshot(camera = cameraId, requestId = "cam-$cameraId"))
+    }
+
+    private fun pollAllCameraSnapshots() {
+        val ids = _uiState.value.camera.cameraIds
+        if (ids.isEmpty()) return
+        scope.launch {
+            ids.forEach { id ->
+                runCatching {
+                    transport.send(RemoteCommand.Snapshot(camera = id, requestId = "cam-$id"), timeoutMs = 15_000L)
+                }
+            }
+        }
     }
 
     fun startLiveView(cameraId: String) = send(RemoteCommand.LiveView(StartStopAction.Start, cameraId))
@@ -832,17 +853,20 @@ class RemoteRepository private constructor(
                 }
             }
 
-            is RemoteResponse.CameraList -> _uiState.update { state ->
-                val selected = state.camera.selectedCameraId
-                    ?.takeIf { it in response.cameras }
-                    ?: response.cameras.firstOrNull()
-                state.copy(
-                    camera = state.camera.copy(
-                        cameraIds = response.cameras,
-                        selectedCameraId = selected,
-                        lastCameraError = null,
-                    ),
-                )
+            is RemoteResponse.CameraList -> {
+                _uiState.update { state ->
+                    val selected = state.camera.selectedCameraId
+                        ?.takeIf { it in response.cameras }
+                        ?: response.cameras.firstOrNull()
+                    state.copy(
+                        camera = state.camera.copy(
+                            cameraIds = response.cameras,
+                            selectedCameraId = selected,
+                            lastCameraError = null,
+                        ),
+                    )
+                }
+                pollAllCameraSnapshots()
             }
 
             is RemoteResponse.SnapshotPending -> _uiState.update {
@@ -851,24 +875,36 @@ class RemoteRepository private constructor(
 
             is RemoteResponse.Snapshot -> _uiState.update { state ->
                 if (response.ok && response.dataBase64 != null) {
+                    val frame = CameraFrame(
+                        dataBase64 = response.dataBase64,
+                        width = response.width,
+                        height = response.height,
+                    )
+                    // Identify which camera this snapshot belongs to via the requestId convention.
+                    val cameraId = response.id?.removePrefix("cam-")?.ifBlank { null }
+                    val isSelected = cameraId == null || cameraId == state.camera.selectedCameraId
+                    val updatedCache = if (cameraId != null) {
+                        state.camera.cachedSnapshots + (cameraId to frame)
+                    } else {
+                        state.camera.cachedSnapshots
+                    }
                     state.copy(
                         camera = state.camera.copy(
-                            snapshot = CameraFrame(
-                                dataBase64 = response.dataBase64,
-                                width = response.width,
-                                height = response.height,
-                            ),
-                            loadingSnapshot = false,
-                            lastCameraError = null,
+                            snapshot = if (isSelected) frame else state.camera.snapshot,
+                            cachedSnapshots = updatedCache,
+                            loadingSnapshot = if (isSelected) false else state.camera.loadingSnapshot,
+                            lastCameraError = if (isSelected) null else state.camera.lastCameraError,
                         ),
                     )
-                } else {
+                } else if (response.id == null || response.id.removePrefix("cam-") == state.camera.selectedCameraId) {
                     state.copy(
                         camera = state.camera.copy(
                             loadingSnapshot = false,
                             lastCameraError = response.error ?: "Snapshot failed",
                         ),
                     )
+                } else {
+                    state
                 }
             }
 

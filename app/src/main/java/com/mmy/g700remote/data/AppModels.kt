@@ -208,6 +208,8 @@ data class CameraUiState(
     val sentinelArmed: Boolean = false,
     val sentinelAlerts: List<SentinelAlertUi> = emptyList(),
     val lastCameraError: String? = null,
+    /** Last known snapshot for every camera ID, keyed by camera ID. Survives disconnection. */
+    val cachedSnapshots: Map<String, CameraFrame> = emptyMap(),
 )
 
 data class NavigationShareResult(

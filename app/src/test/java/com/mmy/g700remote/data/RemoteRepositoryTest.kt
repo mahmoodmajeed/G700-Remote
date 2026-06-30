@@ -257,5 +257,7 @@ class RemoteRepositoryTest {
         override fun setLastSeenReleaseNotesVersion(version: String) {
             releaseNotesVersion = version
         }
+
+        override fun getOrCreateDeviceId(): String = "test-device-id"
     }
 }
