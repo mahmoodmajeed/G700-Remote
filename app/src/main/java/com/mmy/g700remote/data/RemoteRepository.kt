@@ -230,6 +230,7 @@ class RemoteRepository private constructor(
         var cloudClientToken = ""
         var resolvedCode: String? = null
         var resolvedRelay: String? = null
+        var resolvedCarId: String? = null
         var cloudNotice: String? = null
         if (account != null && payload.pairToken.isNotBlank()) {
             val deviceId = settings.getOrCreateDeviceId()
@@ -243,6 +244,8 @@ class RemoteRepository private constructor(
                     cloudClientToken = res.value.clientToken
                     resolvedCode = res.value.pairingCode?.ifBlank { null }
                     resolvedRelay = res.value.relayUrl.ifBlank { null }
+                    // Use the carId from claim-pair: the relay routes by this ID, not the QR's.
+                    resolvedCarId = res.value.carId.ifBlank { null }
                 }
                 is CloudResult.Failure -> {
                     cloudNotice = "Paired for local control. Cloud binding failed: ${res.message}"
@@ -251,6 +254,7 @@ class RemoteRepository private constructor(
         }
         val base = payload.toBoundCar()
         val car = base.copy(
+            carId = resolvedCarId ?: base.carId,
             pairingCode = resolvedCode ?: base.pairingCode,
             relayBase = resolvedRelay ?: base.relayBase,
             cloudClientToken = cloudClientToken,
@@ -505,8 +509,19 @@ class RemoteRepository private constructor(
     }
 
     fun refreshNow() {
-        scope.launch {
-            refreshAll(forceLocation = true)
+        // Cancel and restart the foreground loop so it runs immediately with no concurrent sibling.
+        // Spawning a second parallel coroutine previously caused two refreshAll loops to compete for
+        // the BLE command-queue mutex, doubling per-cycle command count and causing 2-3 s delays.
+        refreshJob?.cancel()
+        refreshJob = scope.launch {
+            var cycle = 0
+            while (true) {
+                if (_uiState.value.connectionState is RemoteConnectionState.Ready) {
+                    refreshAll(cycle = cycle, forceLocation = cycle == 0)
+                    cycle += 1
+                }
+                delay(FOREGROUND_REFRESH_INTERVAL_MS)
+            }
         }
     }
 
@@ -786,6 +801,10 @@ class RemoteRepository private constructor(
                     raceChargeActive = response.raceChargeActive ?: telemetry.raceChargeActive,
                     raceChargeTarget = response.raceChargeTarget ?: telemetry.raceChargeTarget,
                     raceChargeEtaMin = response.raceChargeEtaMin ?: telemetry.raceChargeEtaMin,
+                    // Car does not include hazard/DRL state in lockState broadcasts.
+                    // Reset to null on each status update so echo-set "on" doesn't persist forever.
+                    hazardsOn = null,
+                    drlOn = null,
                 )
             }
 
